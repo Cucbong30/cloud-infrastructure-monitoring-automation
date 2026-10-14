@@ -34,11 +34,11 @@
 
 | Kết quả | Link |
 |---|---|
-| MON01 Setup | [Xem trên GitHub](../setup/mon01-setup.md) |
-| WEB01 Setup | [Xem trên GitHub](../setup/web01-setup.md) |
-| APP01 Setup | [Xem trên GitHub](../setup/app01-setup.md) |
-| WIN01 Setup | [Xem trên GitHub](../setup/win01-setup.md) |
-| Minh chứng triển khai Tuần 2 | [Xem trên GitHub](../screenshots/week02/) |
+| MON01 Setup |  |
+| WEB01 Setup |  |
+| APP01 Setup |  |
+| WIN01 Setup |  |
+| Minh chứng triển khai Tuần 2 |  |
 
 **Trạng thái:** Hoàn thành nội dung Infrastructure / System của Tuần 2.
 
@@ -75,12 +75,12 @@
 
 | Kết quả | Link |
 |---|---|
-| Flask app và SQLite | [Xem trên GitHub](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/application/application) |
-| Login / RBAC | [Xem trên GitHub](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/auth.py) |
-| Server Inventory | [Xem trên GitHub](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/servers.py) |
-| Dashboard | [Xem trên GitHub](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/dashboard.py) |
-| Alerts | [Xem trên GitHub](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/alerts.py) |
-| Automation Jobs | [Xem trên GitHub](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/automation.py) |
+| Flask app và SQLite | (https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/application/application) |
+| Login / RBAC | (https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/auth.py) |
+| Server Inventory | (https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/servers.py) |
+| Dashboard | (https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/dashboard.py) |
+| Alerts | (https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/alerts.py) |
+| Automation Jobs | (https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/automation.py) |
 
 **Trạng thái:** Hoàn thành nội dung Application / Integration của Tuần 2.
 
