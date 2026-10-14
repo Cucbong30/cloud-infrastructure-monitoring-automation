@@ -1,4 +1,4 @@
-# Bảng cấu hình máy chủ ảo
+# Bảng cấu hình server ảo
 
 | Hostname | Vai trò | Hệ điều hành | vCPU | RAM | Disk |
 |---|---|---|---:|---:|---:|
