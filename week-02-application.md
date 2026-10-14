@@ -25,15 +25,7 @@
 - [Alerts](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/alerts.py)
 - [Automation Jobs](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/application/application/app/blueprints/automation.py)
 
-## 4. Kế hoạch Tuần 3
-
-### Nguyễn Thế Gia Bảo
-- Kết nối Prometheus khi máy giám sát sẵn sàng.
-- Đồng bộ cảnh báo từ Prometheus vào SQLite.
-- Giữ Ansible ở chế độ mock/dry-run, chưa chạy trên VM.
-- Kiểm thử portal với các VM sau khi hạ tầng được dựng.
-
-## 5. Khai báo sử dụng AI
+## 4. Khai báo sử dụng AI
 
 - Công cụ: Cursor
 - Mục đích: Soạn báo cáo tuần 2 theo khung mục đã thống nhất.
