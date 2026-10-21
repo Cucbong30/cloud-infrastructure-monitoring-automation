@@ -28,6 +28,3 @@ Triển khai MGMT01 làm Management / Remote Access Gateway cho môi trường L
 - [ ] Advertise route 192.168.10.0/24
 - [ ] Approve subnet route
 - [ ] Kiểm tra remote access từ Application laptop
-
-## Evidence
-Sẽ bổ sung sau khi hoàn tất triển khai và kiểm thử.
