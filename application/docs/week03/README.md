@@ -27,4 +27,6 @@ Khi WEB01 lên lại, cùng fingerprint chuyển **resolved**, không tạo bả
 | APP01 | 192.168.10.12 | `192.168.10.12:9100` |
 | WIN01 | 192.168.10.13 | `192.168.10.13:9182` |
 
+Evidence test case: `screenshots/01-web01-nginx-down.png` … `04-win01-down.png` (Nginx, App container, Grafana, WIN01).
+
 Trên GitHub nhóm, đặt các file này tại `application/docs/week03/`.
