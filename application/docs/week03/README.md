@@ -23,7 +23,7 @@ Trạng thái: hoàn thành nội dung Tuần 3. Code và evidence trên nhánh 
 7. **UI Operations Portal** (dark), seed 4 máy lab, cây `docs/week03/` (setup, configs, scripts, tests, screenshots).
 8. **Evidence 4 test case:** Nginx down, App container down, Grafana down, WIN01 down.
 
-Báo cáo Markdown: [bao-cao-tuan-3.md](bao-cao-tuan-3.md). Khai báo AI: [khai-bao-ai.md](khai-bao-ai.md).
+Báo cáo: [week-03-application.md](week-03-application.md). Khai báo AI: [ai-usage.md](ai-usage.md).
 
 ## Kết quả trên GitHub
 
