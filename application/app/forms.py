@@ -20,9 +20,9 @@ STATUS_CHOICES = [
     ("unknown", "Unknown"),
 ]
 ACTION_CHOICES = [
-    ("restart_service", "Restart service"),
+    ("restart_nginx", "Restart Nginx"),
     ("restart_container", "Restart container"),
-    ("disk_cleanup", "Disk cleanup (dry-run)"),
+    ("restart_windows_exporter", "Restart Windows Exporter"),
 ]
 
 
@@ -79,7 +79,7 @@ class ServerForm(FlaskForm):
 
 class JobForm(FlaskForm):
     server_id = SelectField("Server", coerce=int, validators=[DataRequired()])
-    action_key = SelectField("Action", choices=ACTION_CHOICES, validators=[DataRequired()])
+    action_key = SelectField("Automation action", choices=ACTION_CHOICES, validators=[DataRequired()])
     service_name = StringField("Service name", validators=[Optional(), Length(max=128)])
     container_name = StringField("Container name", validators=[Optional(), Length(max=128)])
     path = StringField("Path token", validators=[Optional(), Length(max=128)])
@@ -89,4 +89,4 @@ class JobForm(FlaskForm):
         default="success",
         validators=[Optional()],
     )
-    submit = SubmitField("Run action")
+    submit = SubmitField("Execute")

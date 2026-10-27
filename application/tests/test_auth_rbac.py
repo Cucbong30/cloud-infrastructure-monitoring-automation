@@ -31,7 +31,7 @@ def test_viewer_mutations_are_forbidden(seeded, client):
     assert post_csrf(
         client,
         "/automation/jobs",
-        {"server_id": server_id, "action_key": "restart_service", "service_name": "nginx", "simulate": "success"},
+        {"server_id": server_id, "action_key": "restart_nginx", "simulate": "success"},
     ).status_code == 403
     assert post_csrf(client, f"/servers/{server_id}/edit", {"name": "web-01"}).status_code == 403
 
@@ -40,7 +40,7 @@ def test_operator_can_acknowledge_and_run_but_not_edit_inventory(seeded, client)
     login(client, "operator")
     with seeded.app_context():
         alert_id = db.session.scalar(select(Alert.id).where(Alert.fingerprint == "demo-fp-service-down-web"))
-        server_id = db.session.scalar(select(Server.id).where(Server.name == "web-01"))
+        server_id = db.session.scalar(select(Server.id).where(Server.name == "WEB01"))
     acknowledged = post_csrf(client, f"/alerts/{alert_id}/acknowledge", {}, page="/alerts/")
     assert acknowledged.status_code == 302
     denied = post_csrf(client, f"/servers/{server_id}/edit", {"name": "web-01"}, page="/servers/")
@@ -50,8 +50,7 @@ def test_operator_can_acknowledge_and_run_but_not_edit_inventory(seeded, client)
         "/automation/jobs",
         {
             "server_id": str(server_id),
-            "action_key": "restart_service",
-            "service_name": "nginx",
+            "action_key": "restart_nginx",
             "container_name": "",
             "path": "",
             "simulate": "success",

@@ -8,6 +8,7 @@ from app.extensions import db
 from app.models import Alert, AuditLog, AutomationJob, Server
 from app.services.inventory import LAB_TARGETS, canonical_server_name
 from app.services.metrics import collect_metrics
+from app.services.remediation import unreachable_message
 from app.services.prometheus import client_from_app
 
 bp = Blueprint("dashboard", __name__)
@@ -115,6 +116,10 @@ def _dashboard_payload():
 
 
 def _annotate_problem(host):
+    if host.get("status") == "Unreachable":
+        host["problem_ok"] = False
+        host["problem"] = unreachable_message(host["name"])
+        return
     parts = []
     if host.get("exporter") == "DOWN":
         parts.append(f"{host['exporter_label']} is down")
@@ -165,28 +170,39 @@ def _flatten_services(hosts):
 
 def _host_events(name, host):
     events = []
-    if host.get("exporter") == "DOWN":
+    if host.get("status") == "Unreachable":
         events.append(
             {
                 "source": "probe",
                 "level": "error",
-                "title": host["exporter_label"],
-                "message": f"{host['exporter_label']} is DOWN. Host metrics come from {host['instance']}.",
+                "title": "Host unreachable",
+                "message": unreachable_message(name),
                 "at": host.get("last_seen"),
             }
         )
-    for service in host.get("services") or []:
-        if service.get("status") == "DOWN":
-            latency = f" Last probe {service['latency_ms']} ms." if service.get("latency_ms") is not None else ""
+    else:
+        if host.get("exporter") == "DOWN":
             events.append(
                 {
                     "source": "probe",
                     "level": "error",
-                    "title": service["name"],
-                    "message": f"{host['name']} {service['name']} is DOWN.{latency}",
+                    "title": host["exporter_label"],
+                    "message": f"{host['exporter_label']} is DOWN. Host metrics come from {host['instance']}.",
                     "at": host.get("last_seen"),
                 }
             )
+        for service in host.get("services") or []:
+            if service.get("status") == "DOWN":
+                latency = f" Last probe {service['latency_ms']} ms." if service.get("latency_ms") is not None else ""
+                events.append(
+                    {
+                        "source": "probe",
+                        "level": "error",
+                        "title": service["name"],
+                        "message": f"{host['name']} {service['name']} is DOWN.{latency}",
+                        "at": host.get("last_seen"),
+                    }
+                )
     server = db.session.scalar(select(Server).where(Server.name == name))
     if server is not None:
         for alert in db.session.scalars(

@@ -3,9 +3,11 @@ import re
 
 from flask import abort, current_app
 
+from app.executors.base import ExecutionResult
 from app.extensions import db
 from app.executors import EXECUTORS, get_executor
 from app.executors.actions import ACTIONS
+from app.executors.ansible import allowed_parameters
 from app.models import AutomationJob, Server, utcnow
 from app.services.audit import record
 from app.validation import TOKEN_RE
@@ -62,6 +64,8 @@ def enqueue_job(*, server_id, action_key, parameters, trigger_source, requested_
     server = db.session.get(Server, server_id) if server_id is not None else None
     if server is None or not server.is_active:
         raise AutomationRejected("Server is not available.")
+    if not allowed_parameters(server, action.key, parameters):
+        raise AutomationRejected("Action is not allowed for this server.")
     if trigger_source not in {"manual", "remediation", "system"}:
         raise AutomationRejected("Invalid trigger.")
     executor_name = current_app.config.get("AUTOMATION_EXECUTOR", "mock")
@@ -140,7 +144,12 @@ def dispatch(job_id, actor=None):
     job.started_at = utcnow()
     db.session.commit()
 
-    result = get_executor(job.executor)().execute(job, server, action)
+    try:
+        result = get_executor(job.executor)().execute(job, server, action)
+    except Exception:
+        current_app.logger.exception("automation executor failed")
+        now = utcnow()
+        result = ExecutionResult(False, 1, "Executor failed without a result.", now, now)
     job.status = "succeeded" if result.success else "failed"
     job.exit_code = result.exit_code
     job.output_excerpt = scrub_output(result.output, current_app.config["JOB_OUTPUT_MAX_CHARS"])

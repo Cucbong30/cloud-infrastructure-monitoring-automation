@@ -36,11 +36,23 @@
           <td>{{ alert.starts_at | dt }}</td>
           <td>{{ alert.resolved_at | dt }}</td>
           <td>
-            {% if alert.status == 'firing' and current_user.role in ['operator', 'admin'] %}
-              <form method="post" action="{{ url_for('alerts.acknowledge', alert_id=alert.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-outline-primary" type="submit">Acknowledge</button>
-              </form>
+            {% if blocked.get(alert.id) %}
+              <span class="text-warning small">{{ blocked[alert.id] }}</span>
+            {% elif alert.status != 'resolved' and current_user.role in ['operator', 'admin'] %}
+              <div class="d-flex gap-2">
+                {% if alert.status == 'firing' %}
+                  <form method="post" action="{{ url_for('alerts.acknowledge', alert_id=alert.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Acknowledge</button>
+                  </form>
+                {% endif %}
+                {% if suggestions.get(alert.id) %}
+                  <form method="post" action="{{ url_for('alerts.remediate', alert_id=alert.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-primary" type="submit">{{ suggestions[alert.id].label }}</button>
+                  </form>
+                {% endif %}
+              </div>
             {% endif %}
           </td>
         </tr>

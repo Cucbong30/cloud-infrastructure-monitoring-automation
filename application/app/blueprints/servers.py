@@ -7,7 +7,10 @@ from app.authz import roles_required
 from app.extensions import db
 from app.forms import ServerForm
 from app.models import Server, utcnow
+from app.presentation import job_status_label
 from app.services.audit import record
+from app.services.automation import AutomationRejected, queue_and_dispatch
+from app.services.remediation import blocked_reason, suggest_remediation
 from app.validation import blank_to_none
 
 bp = Blueprint("servers", __name__, url_prefix="/servers")
@@ -76,7 +79,44 @@ def detail(server_id):
         abort(404)
     alerts = sorted(server.alerts, key=lambda alert: alert.created_at, reverse=True)
     jobs = sorted(server.jobs, key=lambda job: job.created_at, reverse=True)
-    return render_template("servers/detail.html", server=server, alerts=alerts, jobs=jobs)
+    return render_template(
+        "servers/detail.html",
+        server=server,
+        alerts=alerts,
+        jobs=jobs,
+        suggestion=suggest_remediation(server),
+        unreachable_message=blocked_reason(server),
+    )
+
+
+@bp.post("/<int:server_id>/remediate")
+@roles_required("operator", "admin")
+def remediate(server_id):
+    server = db.session.get(Server, server_id)
+    if server is None:
+        abort(404)
+    reason = blocked_reason(server)
+    if reason:
+        flash(reason, "warning")
+        return redirect(url_for("servers.detail", server_id=server.id))
+    suggestion = suggest_remediation(server)
+    if suggestion is None:
+        abort(400)
+    try:
+        job = queue_and_dispatch(
+            server_id=server.id,
+            action_key=suggestion["action_key"],
+            parameters=suggestion["parameters"],
+            actor=current_user,
+        )
+    except AutomationRejected:
+        flash("Remediation was rejected.", "warning")
+        return redirect(url_for("servers.detail", server_id=server.id))
+    flash(
+        f"{suggestion['label']} finished with status {job_status_label(job.status)}.",
+        "success" if job.status == "succeeded" else "warning",
+    )
+    return redirect(url_for("automation.index"))
 
 
 @bp.route("/new", methods=["GET", "POST"])

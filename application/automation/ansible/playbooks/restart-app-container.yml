@@ -1,0 +1,12 @@
+---
+# Copy of the playbook that runs on MON01 at ~/ansible/playbooks/restart-app-container.yml
+- name: restart app container on APP01
+  hosts: app01
+  gather_facts: false
+  tasks:
+    - name: restart app01-web
+      ansible.builtin.command:
+        argv:
+          - docker
+          - restart
+          - app01-web
