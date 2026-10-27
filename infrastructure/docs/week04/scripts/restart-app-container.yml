@@ -1,0 +1,32 @@
+---
+- name: Recover application container on APP01
+  hosts: linux_app
+  gather_facts: false
+
+  tasks:
+    - name: Start app01-web container
+      ansible.builtin.command:
+        cmd: sudo -n docker start app01-web
+      register: container_start
+      changed_when: true
+
+    - name: Wait for application port 8080
+      ansible.builtin.wait_for:
+        host: 192.168.10.12
+        port: 8080
+        state: started
+        timeout: 15
+      delegate_to: localhost
+
+    - name: Verify application HTTP response
+      ansible.builtin.uri:
+        url: http://192.168.10.12:8080
+        method: GET
+        status_code: 200
+        return_content: false
+      delegate_to: localhost
+      register: app_http
+
+    - name: Show recovery result
+      ansible.builtin.debug:
+        msg: "APP01 recovery successful - HTTP status {{ app_http.status }}"
