@@ -52,17 +52,26 @@
     </tbody>
   </table>
 </div>
+{% if unreachable_message %}
+  <div class="alert alert-warning">{{ unreachable_message }}</div>
+{% elif suggestion and current_user.role in ['operator', 'admin'] %}
+  <form method="post" action="{{ url_for('servers.remediate', server_id=server.id) }}" class="mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-primary" type="submit">{{ suggestion.label }}</button>
+  </form>
+{% endif %}
 <h2 class="h5">Jobs</h2>
 <div class="table-responsive card">
   <table class="table mb-0">
-    <thead><tr><th>Action</th><th>Status</th><th>Executor</th><th>When</th></tr></thead>
+    <thead><tr><th>Action</th><th>Status</th><th>Executor</th><th>When</th><th>Output / error</th></tr></thead>
     <tbody>
       {% for job in jobs %}
         <tr>
           <td>{{ job.action_key }}</td>
-          <td><span class="badge text-bg-{{ badge_class(job.status) }}">{{ job.status }}</span></td>
+          <td><span class="badge text-bg-{{ badge_class(job.status) }}">{{ job_status_label(job.status) }}</span></td>
           <td>{{ job.executor }}</td>
           <td>{{ job.created_at | dt }}</td>
+          <td>{% if job.output_excerpt %}<pre class="output small mb-0">{{ job.output_excerpt }}</pre>{% else %}—{% endif %}</td>
         </tr>
       {% else %}
         <tr><td colspan="4" class="text-secondary">No jobs for this server.</td></tr>

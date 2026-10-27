@@ -1,5 +1,5 @@
 import os
-from datetime import timezone
+from datetime import timedelta, timezone
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.config import ROOT, build_config
 from app.extensions import csrf, db, login_manager, migrate
-from app.presentation import badge_class
+from app.presentation import badge_class, job_duration_seconds, job_status_label
 
 PUBLIC_ENDPOINTS = {"healthz", "auth.login", "static", "index", "webhooks.alertmanager"}
 
@@ -69,13 +69,19 @@ def create_app(test_config=None):
     def format_dt(value):
         if not value:
             return "—"
-        if getattr(value, "tzinfo", None) is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
-        return value.strftime("%Y-%m-%d %H:%M UTC")
+        if getattr(value, "tzinfo", None) is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone(timedelta(hours=7))).strftime("%Y-%m-%d %H:%M UTC+7")
 
     @app.context_processor
     def inject_ui():
-        return {"badge_class": badge_class, "grafana_url": app.config.get("GRAFANA_BASE_URL", "")}
+        return {
+            "badge_class": badge_class,
+            "grafana_url": app.config.get("GRAFANA_BASE_URL", ""),
+            "job_status_label": job_status_label,
+            "job_duration_seconds": job_duration_seconds,
+            "automation_executor": app.config.get("AUTOMATION_EXECUTOR", "mock"),
+        }
 
     @app.errorhandler(400)
     def bad_request(_exc):
