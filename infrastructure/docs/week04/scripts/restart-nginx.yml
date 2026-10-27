@@ -1,0 +1,32 @@
+---
+- name: Recover Nginx on WEB01
+  hosts: linux_web
+  gather_facts: false
+
+  tasks:
+    - name: Restart nginx service
+      ansible.builtin.command:
+        cmd: sudo -n systemctl restart nginx
+      register: restart_result
+      changed_when: true
+
+    - name: Wait for nginx port 80
+      ansible.builtin.wait_for:
+        host: 192.168.10.11
+        port: 80
+        state: started
+        timeout: 15
+      delegate_to: localhost
+
+    - name: Verify nginx HTTP response
+      ansible.builtin.uri:
+        url: http://192.168.10.11
+        method: GET
+        status_code: 200
+        return_content: false
+      delegate_to: localhost
+      register: nginx_http
+
+    - name: Show recovery result
+      ansible.builtin.debug:
+        msg: "Nginx recovery successful - HTTP status {{ nginx_http.status }}"
