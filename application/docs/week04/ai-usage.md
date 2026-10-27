@@ -2,11 +2,11 @@
 
 ## Công cụ sử dụng
 
-Cursor (Grok), dùng khi viết code và khi dựng báo cáo tuần này theo mẫu tuần 3.
+Cursor (Grok), dùng khi viết code.
 
 ## Mục đích sử dụng
 
-Nhờ nối Portal với Ansible trên MON01, giữ allow-list ba action, lưu job history, nhãn trạng thái, audit, nút remediation, và trường hợp máy Unreachable thì không hiện nút restart. Nhờ sắp báo cáo tuần 4 từ nhật ký job trên lab và form tuần 3.
+Nhờ nối Portal với Ansible trên MON01, giữ allow-list ba action, lưu job history, nhãn trạng thái, audit, nút remediation, và trường hợp máy Unreachable thì không hiện nút restart.
 
 Commit code có trailer `Co-authored-by: Cursor <cursoragent@cursor.com>`.
 
@@ -17,8 +17,6 @@ AI gợi ý executor SSH từ laptop sang MON01 `192.168.10.10`, chỉ gọi m�
 AI gợi ý lưu giờ chạy, server, action, result, output, và ghi `job.request` với `job.result`. Nhãn trên giao diện là Pending, Running, Success, Failed. Giờ hiển thị UTC+7.
 
 AI gợi ý nút remediation trên Alert và Server Detail, và một thông báo khác khi exporter cùng dịch vụ đều DOWN. Lỗi Ansible hoặc target nằm trên job, portal không crash.
-
-AI dựng file báo cáo này và `week-04-application.md` từ các job đã chạy trên lab.
 
 ## Phần em tự làm
 
