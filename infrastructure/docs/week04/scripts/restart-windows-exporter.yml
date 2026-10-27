@@ -1,0 +1,31 @@
+---
+- name: Recover Windows Exporter on WIN01
+  hosts: windows
+  gather_facts: false
+
+  tasks:
+    - name: Start windows_exporter service
+      ansible.windows.win_service:
+        name: windows_exporter
+        state: started
+
+    - name: Wait for Windows Exporter port 9182
+      ansible.builtin.wait_for:
+        host: 192.168.10.13
+        port: 9182
+        state: started
+        timeout: 20
+      delegate_to: localhost
+
+    - name: Verify Windows Exporter metrics endpoint
+      ansible.builtin.uri:
+        url: http://192.168.10.13:9182/metrics
+        method: GET
+        status_code: 200
+        return_content: false
+      delegate_to: localhost
+      register: exporter_http
+
+    - name: Show recovery result
+      ansible.builtin.debug:
+        msg: "WIN01 windows_exporter recovery successful - HTTP status {{ exporter_http.status }}"
