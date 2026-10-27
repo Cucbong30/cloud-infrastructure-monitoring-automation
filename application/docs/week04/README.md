@@ -31,7 +31,7 @@ Báo cáo: [week-04-application.md](week-04-application.md). Khai báo AI: [ai-u
 | --- | --- | --- |
 | Code Jobs / Ansible | [application/](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/aecb279c07407ae612b4b9476fec702ddeaa1eaf/application) | [aecb279](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/aecb279c07407ae612b4b9476fec702ddeaa1eaf) |
 | Executor | [ansible.py](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/aecb279c07407ae612b4b9476fec702ddeaa1eaf/application/app/executors/ansible.py) | cùng commit |
-| Ảnh test case | [screenshots](screenshots) | nhánh application |
+| Ảnh test case | [screenshots](screenshots) | [64b6de0](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/64b6de060eb31a7b09230cf36afa0e88b6673969) |
 
 ## Ảnh
 

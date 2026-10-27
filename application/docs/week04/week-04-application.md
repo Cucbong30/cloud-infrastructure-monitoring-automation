@@ -56,11 +56,11 @@ Trạng thái: module Jobs đã nối Ansible allow-list và đã chạy ba play
 | Remediation từ Alert và Server | suggest the one allow-listed action, or a notice when the host is down | [remediation.py](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/aecb279c07407ae612b4b9476fec702ddeaa1eaf/application/app/services/remediation.py) | cùng commit |
 | Playbook path | three fixed paths, old restart_service and disk_cleanup removed | [playbooks](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/aecb279c07407ae612b4b9476fec702ddeaa1eaf/application/automation/ansible/playbooks) | cùng commit |
 | Tests | allow-list, job result, unreachable notice | [test_automation.py](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/aecb279c07407ae612b4b9476fec702ddeaa1eaf/application/tests/test_automation.py) | cùng commit |
-| Ảnh ba playbook Success | WIN01, APP01, WEB01 Success and the earlier Failed rows | [02-three-playbooks-success.png](screenshots/02-three-playbooks-success.png) | nhánh application |
-| Ảnh target Unreachable | Failed, No route to host, portal still shows the job | [03-playbook-unreachable-failed.png](screenshots/03-playbook-unreachable-failed.png) | nhánh application |
-| Ảnh không còn nút restart | three unreachable notices on the Jobs page | [01-unreachable-instead-of-restart.png](screenshots/01-unreachable-instead-of-restart.png) | nhánh application |
-| Ảnh Server Detail | WEB01 down, one notice, no Restart Nginx button | [04-web01-server-detail.png](screenshots/04-web01-server-detail.png) | nhánh application |
-| Ảnh Audit Log | job.request and job.result for the automation jobs | [05-audit-job-events.png](screenshots/05-audit-job-events.png) | nhánh application |
+| Ảnh ba playbook Success | WIN01, APP01, WEB01 Success and the earlier Failed rows | [02-three-playbooks-success.png](screenshots/02-three-playbooks-success.png) | [64b6de0](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/64b6de060eb31a7b09230cf36afa0e88b6673969) |
+| Ảnh target Unreachable | Failed, No route to host, portal still shows the job | [03-playbook-unreachable-failed.png](screenshots/03-playbook-unreachable-failed.png) | cùng commit ảnh |
+| Ảnh không còn nút restart | three unreachable notices on the Jobs page | [01-unreachable-instead-of-restart.png](screenshots/01-unreachable-instead-of-restart.png) | cùng commit ảnh |
+| Ảnh Server Detail | WEB01 down, one notice, no Restart Nginx button | [04-web01-server-detail.png](screenshots/04-web01-server-detail.png) | cùng commit ảnh |
+| Ảnh Audit Log | job.request and job.result for the automation jobs | [05-audit-job-events.png](screenshots/05-audit-job-events.png) | cùng commit ảnh |
 
 ## Luồng đã kiểm tra
 
