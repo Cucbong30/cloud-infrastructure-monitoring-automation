@@ -2,7 +2,7 @@
 
 Nguyễn Thế Gia Bảo – Application / Integration
 
-Trạng thái: Jobs module đã nối Ansible trên MON01. Ba playbook allow-list đã chạy trên lab và trả HTTP 200. Evidence nằm trên nhánh `application`, thư mục `application/docs/week04/`. Không đẩy phần này lên nhánh `infra`.
+Trạng thái: Jobs module đã nối Ansible trên MON01. Ba playbook allow-list đã chạy trên lab và trả HTTP 200. Evidence nằm trên nhánh `application`, thư mục `application/docs/week04/`.
 
 ## Công việc được phân công
 
