@@ -1,0 +1,16 @@
+[linux_web]
+WEB01 ansible_host=192.168.10.11 ansible_user=bong
+
+[linux_app]
+APP01 ansible_host=192.168.10.12 ansible_user=bong
+
+[windows]
+WIN01 ansible_host=192.168.10.13
+
+[windows:vars]
+ansible_connection=winrm
+ansible_port=5985
+ansible_user=WIN01\Administrator
+ansible_password=<WINDOWS_PASSWORD>
+ansible_winrm_transport=ntlm
+ansible_winrm_server_cert_validation=ignore
