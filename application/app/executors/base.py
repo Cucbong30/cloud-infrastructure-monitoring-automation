@@ -10,6 +10,7 @@ class ExecutionResult:
     output: str
     started_at: datetime
     finished_at: datetime
+    stderr: str = ""
 
 
 class AutomationExecutor(ABC):

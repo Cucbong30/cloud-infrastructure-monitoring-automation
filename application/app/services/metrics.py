@@ -6,6 +6,7 @@ from app.extensions import db
 from app.models import Server, utcnow
 from app.services.audit import record
 from app.services.inventory import LAB_TARGETS
+from app.services.checks import probe_management
 from app.services.probes import http_probe, tcp_probe, unpack_probe
 from app.services.prometheus import client_from_app
 
@@ -153,6 +154,7 @@ def _blank_host(name):
         "exporter_label": check["exporter_label"],
         "exporter_short": check["exporter_short"],
         "exporter": "DOWN",
+        "management": None,
         "services": [
             {"name": item["name"], "short": item["short"], "status": "DOWN", "latency_ms": None}
             for item in check["services"]
@@ -188,6 +190,7 @@ def _collect_host(name, spec, client, prometheus_available, probe_http, probe_tc
         service_up = service_up and ok
     row["services"] = services
     row["status"] = _host_status(exporter_up, service_up)
+    row["management"] = probe_management(name, probe_tcp=probe_tcp, timeout=timeout)
 
     if prometheus_available and exporter_up:
         queries = WINDOWS_QUERIES if spec["os_type"] == "windows" else LINUX_QUERIES

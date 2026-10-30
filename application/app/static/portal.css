@@ -255,8 +255,11 @@ a { color: var(--blue); }
 }
 .log-line.error, .log-line.critical { border-color: #7f1d1d; background: #3f1212; }
 .log-line.warning { border-color: #854d0e; background: #3f2e10; }
+.log-line.up { border-color: #166534; background: #052e16; }
 .log-meta { color: var(--muted); font-size: 0.75rem; margin-bottom: 0.2rem; }
 .log-line pre { white-space: pre-wrap; margin: 0.35rem 0 0; font-size: 0.82rem; color: #e2e8f0; }
+.log-extra { margin-top: 0.35rem; font-size: 0.82rem; color: #cbd5e1; }
+.log-extra a { color: #93c5fd; }
 
 .badge.text-bg-light { color: #212529; border: 1px solid #dee2e6; }
 .metric-value { font-size: 1.5rem; font-weight: 600; }
