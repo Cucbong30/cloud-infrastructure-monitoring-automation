@@ -2,7 +2,7 @@
 
 ## Công cụ sử dụng
 
-Cursor (Grok), dùng khi viết code và khi sắp báo cáo này theo form tuần 4, từ ảnh lab em đã chụp.
+Cursor (Grok), dùng khi viết code.
 
 ## Mục đích sử dụng
 
