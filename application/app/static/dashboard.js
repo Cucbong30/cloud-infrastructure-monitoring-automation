@@ -41,6 +41,12 @@
     if (node) node.textContent = value;
   }
 
+  function managementCell(host) {
+    if (!host.management) return "—";
+    const status = String(host.management.status || "").toLowerCase();
+    return '<span class="pill pill-' + status + '">' + escapeHtml(host.management.text) + "</span>";
+  }
+
   function chips(host) {
     const items = [
       `<button type="button" class="chip ${host.exporter.toLowerCase()}" title="${escapeHtml(host.exporter_label)} ${escapeHtml(host.exporter)}" data-host="${escapeHtml(host.name)}" data-check="${escapeHtml(host.exporter_label)}">${escapeHtml(host.exporter_short)}</button>`,
@@ -103,6 +109,7 @@
             <td>${escapeHtml(host.disk)}${meter(host.disk_value)}</td>
             <td>${escapeHtml(host.uptime)}</td>
             <td>${chips(host)}</td>
+            <td>${managementCell(host)}</td>
             <td class="small text-secondary">${ago(host.last_seen)}</td>
           </tr>`;
         })
@@ -156,7 +163,8 @@
       const data = await response.json();
       const host = data.host || {};
       logTitle.textContent = `${host.name} · ${checkName || host.problem}`;
-      logSubtitle.textContent = `${host.role} · ${host.ip} · metrics ${host.instance} · ${host.status}`;
+      const management = host.management && host.management.text ? ` · ${host.management.text}` : "";
+      logSubtitle.textContent = `${host.role} · ${host.ip} · metrics ${host.instance} · ${host.status}${management}`;
       logMetrics.innerHTML = `
         <div><span>CPU</span><strong>${escapeHtml(host.cpu)}</strong></div>
         <div><span>RAM</span><strong>${escapeHtml(host.memory)}</strong></div>
@@ -164,19 +172,46 @@
         <div><span>Uptime</span><strong>${escapeHtml(host.uptime)}</strong></div>`;
       const events = data.events || [];
       logEvents.innerHTML = events.length
-        ? events
-            .map(
-              (event) => `<article class="log-line ${escapeHtml(event.level)}">
-                <div class="log-meta">${escapeHtml(event.source)} · ${escapeHtml(event.at || "now")}</div>
-                <strong>${escapeHtml(event.title)}</strong>
-                <pre>${escapeHtml(event.message)}</pre>
-              </article>`
-            )
-            .join("")
+        ? events.map(renderEvent).join("")
         : "<p class='text-secondary'>No stored events yet. The down state is from the live probe.</p>";
     } catch (_error) {
       logEvents.innerHTML = "<p class='text-danger'>Could not load the event log.</p>";
     }
+  }
+
+  function renderEvent(event) {
+    const when = event.at_label || event.at || "now";
+    const links = [];
+    if (event.href && event.job_id) {
+      links.push(`<a href="${escapeHtml(event.href)}">Job ${escapeHtml(String(event.job_id))}</a>`);
+    } else if (event.href && event.source === "alert") {
+      links.push(`<a href="${escapeHtml(event.href)}">Open alert</a>`);
+    }
+    if (event.alert_href) {
+      links.push(`<a href="${escapeHtml(event.alert_href)}">${escapeHtml(event.alert_name || "Alert")}</a>`);
+    }
+    (event.jobs || []).forEach((job) => {
+      if (job && job.href) links.push(`<a href="${escapeHtml(job.href)}">${escapeHtml(job.label || "Job")}</a>`);
+    });
+    const extra = [
+      event.outcome ? `Result: ${escapeHtml(event.outcome)}` : "",
+      event.verification ? `Verification: ${escapeHtml(event.verification)}` : "",
+      event.verification_detail && event.verification_detail !== event.message
+        ? escapeHtml(event.verification_detail)
+        : "",
+      event.exit_code !== undefined && event.exit_code !== null ? `Exit code: ${escapeHtml(String(event.exit_code))}` : "",
+      event.notice ? escapeHtml(event.notice) : "",
+      event.can_retry ? "Retry creates a new job from the job detail page." : "",
+      links.length ? links.join(" · ") : "",
+    ].filter(Boolean);
+    const log = event.log && event.log !== event.message ? `<pre>${escapeHtml(event.log)}</pre>` : "";
+    return `<article class="log-line ${escapeHtml(event.level)}">
+      <div class="log-meta">${escapeHtml(event.source)} · ${escapeHtml(when)}</div>
+      <strong>${escapeHtml(event.title)}</strong>
+      ${event.message ? `<pre>${escapeHtml(event.message)}</pre>` : ""}
+      ${extra.map((line) => `<div class="log-extra">${line}</div>`).join("")}
+      ${log}
+    </article>`;
   }
 
   function closeLogs() {

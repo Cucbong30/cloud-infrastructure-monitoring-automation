@@ -130,3 +130,41 @@ def test_host_status_is_degraded_when_only_the_service_is_down(app, monkeypatch)
         "Grafana :3000",
     ]
     assert by_name["MON01"]["status"] == "Degraded"
+
+
+def test_ssh_down_does_not_mark_the_host_unreachable(app, monkeypatch):
+    class FakeClient:
+        def health(self):
+            return IntegrationStatus(True, "ok")
+
+        def instant_query(self, query, time=None):
+            if query.startswith("up{"):
+                return QueryResult(True, data={"result": [{"value": [1, "1"]}]})
+            return QueryResult(True, data={"result": [{"value": [1, "12.5"]}]})
+
+    def probe_tcp(host, port, timeout=2):
+        if int(port) == 22:
+            return False, None
+        return True, 1
+
+    monkeypatch.setattr("app.services.metrics.client_from_app", lambda: FakeClient())
+    with app.app_context():
+        _values, hosts, status = collect_metrics(
+            probe_http=lambda url, timeout=2: (True, 1),
+            probe_tcp=probe_tcp,
+        )
+    by_name = {host["name"]: host for host in hosts}
+    assert status.available is True
+    assert by_name["WEB01"]["status"] == "Healthy"
+    assert by_name["WEB01"]["exporter"] == "UP"
+    assert by_name["WEB01"]["services"][0]["name"] == "Nginx :80"
+    assert by_name["WEB01"]["services"][0]["status"] == "UP"
+    assert by_name["WEB01"]["management"]["text"] == "SSH DOWN"
+    assert by_name["WEB01"]["management"]["port"] == 22
+    assert by_name["APP01"]["status"] == "Healthy"
+    assert by_name["APP01"]["management"]["text"] == "SSH DOWN"
+    assert by_name["APP01"]["management"]["host"] == "192.168.10.12"
+    assert by_name["WIN01"]["status"] == "Healthy"
+    assert by_name["WIN01"]["management"]["text"] == "WinRM UP"
+    assert by_name["WIN01"]["management"]["port"] == 5985
+    assert by_name["MON01"]["management"] is None

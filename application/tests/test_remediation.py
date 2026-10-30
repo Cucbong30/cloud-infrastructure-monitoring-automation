@@ -39,6 +39,11 @@ def test_remediation_creates_one_job_and_audit(seeded):
         assert jobs[0].action_key == "restart_nginx"
         assert jobs[0].trigger_source == "remediation"
         assert jobs[0].status == "succeeded"
+        assert jobs[0].verification_result == "passed"
+        job_audit = db.session.scalar(
+            select(AuditLog).where(AuditLog.action == "remediation.verified", AuditLog.resource_id == str(jobs[0].id))
+        )
+        assert job_audit is not None
         audits = db.session.scalars(select(AuditLog).where(AuditLog.resource_id == str(alert.id))).all()
         actions = {entry.action for entry in audits}
         assert "remediation.request" in actions

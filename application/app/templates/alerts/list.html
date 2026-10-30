@@ -28,7 +28,7 @@
     </thead>
     <tbody>
       {% for alert in alerts %}
-        <tr>
+        <tr id="alert-{{ alert.id }}">
           <td>{% if alert.server %}<a href="{{ url_for('servers.detail', server_id=alert.server.id) }}">{{ alert.server.name }}</a>{% else %}—{% endif %}</td>
           <td>{{ alert.alert_name }}</td>
           <td><span class="badge text-bg-{{ badge_class(alert.severity) }}">{{ alert.severity }}</span></td>
@@ -37,8 +37,18 @@
           <td>{{ alert.resolved_at | dt }}</td>
           <td>
             {% if blocked.get(alert.id) %}
-              <span class="text-warning small">{{ blocked[alert.id] }}</span>
-            {% elif alert.status != 'resolved' and current_user.role in ['operator', 'admin'] %}
+              <div class="alert alert-warning py-1 px-2 mb-2">{{ blocked[alert.id] }}</div>
+            {% elif suggestions.get(alert.id) and alert.status != 'resolved' %}
+              <div class="alert alert-info py-1 px-2 mb-2">Suggested action: {{ suggestions[alert.id].label }}</div>
+            {% endif %}
+            {% if alert.jobs %}
+              <div class="small mb-1">
+                {% for job in alert.jobs|sort(attribute='id', reverse=True) %}
+                  <a href="{{ url_for('automation.detail', job_id=job.id) }}">Job {{ job.id }} {{ job_outcome_label(job) }}</a>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+            {% if not blocked.get(alert.id) and alert.status != 'resolved' and current_user.role in ['operator', 'admin'] %}
               <div class="d-flex gap-2">
                 {% if alert.status == 'firing' %}
                   <form method="post" action="{{ url_for('alerts.acknowledge', alert_id=alert.id) }}">

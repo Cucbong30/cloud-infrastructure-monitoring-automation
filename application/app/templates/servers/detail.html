@@ -27,6 +27,8 @@
     <dt class="col-sm-3">Environment</dt><dd class="col-sm-9">{{ server.environment }}</dd>
     <dt class="col-sm-3">OS</dt><dd class="col-sm-9">{{ server.os_type }}</dd>
     <dt class="col-sm-3">Status</dt><dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(server.status) }}">{{ server.status }}</span></dd>
+    <dt class="col-sm-3">Management</dt>
+    <dd class="col-sm-9">{% if management %}<span class="pill pill-{{ management.status|lower }}">{{ management.text }}</span>{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Monitoring target</dt><dd class="col-sm-9">{{ server.monitoring_target or '—' }}</dd>
     <dt class="col-sm-3">Automation group</dt><dd class="col-sm-9">{{ server.automation_group or '—' }}</dd>
     <dt class="col-sm-3">Azure resource ID</dt><dd class="col-sm-9"><code>{{ server.azure_resource_id or 'Not linked' }}</code></dd>
@@ -37,23 +39,36 @@
 <h2 class="h5">Alerts</h2>
 <div class="table-responsive card mb-4">
   <table class="table mb-0">
-    <thead><tr><th>Name</th><th>Severity</th><th>Status</th><th>Summary</th></tr></thead>
+    <thead><tr><th>Name</th><th>Severity</th><th>Status</th><th>Started</th><th>Jobs</th><th>Summary</th></tr></thead>
     <tbody>
       {% for alert in alerts %}
         <tr>
-          <td>{{ alert.alert_name }}</td>
+          <td><a href="{{ url_for('alerts.index') }}#alert-{{ alert.id }}">{{ alert.alert_name }}</a></td>
           <td><span class="badge text-bg-{{ badge_class(alert.severity) }}">{{ alert.severity }}</span></td>
           <td><span class="badge text-bg-{{ badge_class(alert.status) }}">{{ alert.status }}</span></td>
+          <td>{{ alert.starts_at | dt }}</td>
+          <td>
+            {% for job in alert.jobs|sort(attribute='id', reverse=True) %}
+              <a href="{{ url_for('automation.detail', job_id=job.id) }}">Job {{ job.id }} {{ job_outcome_label(job) }}</a>{% if not loop.last %}<br>{% endif %}
+            {% else %}
+              —
+            {% endfor %}
+          </td>
           <td>{{ alert.summary }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="text-secondary">No alerts for this server.</td></tr>
+        <tr><td colspan="6" class="text-secondary">No alerts for this server.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-{% if unreachable_message %}
-  <div class="alert alert-warning">{{ unreachable_message }}</div>
+{% if suggestion %}
+  <p class="mb-2"><strong>Suggested action:</strong> {{ suggestion.label }}</p>
+{% endif %}
+{% if management_message %}
+  <div class="alert alert-warning">{{ management_message }}</div>
+{% elif host_message %}
+  <div class="alert alert-warning">{{ host_message }}</div>
 {% elif suggestion and current_user.role in ['operator', 'admin'] %}
   <form method="post" action="{{ url_for('servers.remediate', server_id=server.id) }}" class="mb-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -67,14 +82,14 @@
     <tbody>
       {% for job in jobs %}
         <tr>
-          <td>{{ job.action_key }}</td>
-          <td><span class="badge text-bg-{{ badge_class(job.status) }}">{{ job_status_label(job.status) }}</span></td>
+          <td><a href="{{ url_for('automation.detail', job_id=job.id) }}">{{ job.action_key }}</a></td>
+          <td><span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ job_outcome_label(job) }}</span></td>
           <td>{{ job.executor }}</td>
           <td>{{ job.created_at | dt }}</td>
-          <td>{% if job.output_excerpt %}<pre class="output small mb-0">{{ job.output_excerpt }}</pre>{% else %}—{% endif %}</td>
+          <td><pre class="output small mb-0">{% if job.block_reason %}{{ job.block_reason }}{% elif job.stderr_excerpt %}{{ job.stderr_excerpt }}{% elif job.output_excerpt %}{{ job.output_excerpt }}{% else %}—{% endif %}</pre></td>
         </tr>
       {% else %}
-        <tr><td colspan="4" class="text-secondary">No jobs for this server.</td></tr>
+        <tr><td colspan="5" class="text-secondary">No jobs for this server.</td></tr>
       {% endfor %}
     </tbody>
   </table>

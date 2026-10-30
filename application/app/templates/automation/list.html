@@ -11,7 +11,7 @@
       <h2 class="h5">Run an allow-listed action</h2>
       <p class="text-secondary mb-3">Ansible runs on MON01 (192.168.10.10). WEB01 can restart Nginx, APP01 can restart container app01-web, and WIN01 can restart windows_exporter.</p>
       {% for notice in unreachable_notices %}
-        <div class="alert alert-warning">{{ notice }}</div>
+        <div class="alert alert-warning management-block">{{ notice }}</div>
       {% endfor %}
       {{ form.hidden_tag() }}
       <div class="row g-3">
@@ -38,9 +38,20 @@
           {{ form.container_name(class="form-control", placeholder="app01-web") }}
         </div>
       </div>
-      {{ form.submit(class="btn btn-primary mt-3", value="Execute") }}
+      {{ form.submit(class="btn btn-primary mt-3", value="Execute", id="execute-button") }}
     </div>
   </form>
+  <script>
+    const managementBlocks = {{ management_blocks|tojson }};
+    const serverSelect = document.getElementById("server_id");
+    const executeButton = document.getElementById("execute-button");
+    function refreshExecute() {
+      if (!serverSelect || !executeButton) return;
+      executeButton.disabled = Boolean(managementBlocks[serverSelect.value]);
+    }
+    if (serverSelect) serverSelect.addEventListener("change", refreshExecute);
+    refreshExecute();
+  </script>
 {% endif %}
 <div class="table-responsive card">
   <table class="table mb-0 align-middle">
@@ -63,10 +74,10 @@
           <td>{{ job.finished_at | dt }}</td>
           <td>{% set seconds = job_duration_seconds(job) %}{% if seconds is not none %}{{ seconds }}s{% else %}—{% endif %}</td>
           <td>{% if job.server %}<a href="{{ url_for('servers.detail', server_id=job.server.id) }}">{{ job.server.name }}</a>{% else %}—{% endif %}</td>
-          <td>{{ job.action_key }}</td>
+          <td><a href="{{ url_for('automation.detail', job_id=job.id) }}">{{ job.action_key }}</a>{% if job.alert_id %} <span class="text-secondary small">alert #{{ job.alert_id }}</span>{% endif %}</td>
           <td><span class="badge text-bg-{{ badge_class(job.trigger_source) }}">{{ job.trigger_source }}</span></td>
-          <td><span class="badge text-bg-{{ badge_class(job.status) }}">{{ job_status_label(job.status) }}</span></td>
-          <td>{% if job.output_excerpt %}<pre class="output small mb-0">{{ job.output_excerpt }}</pre>{% else %}—{% endif %}</td>
+          <td><span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ job_outcome_label(job) }}</span></td>
+          <td><pre class="output small mb-0">{% if job.block_reason %}{{ job.block_reason }}{% elif job.stderr_excerpt %}{{ job.stderr_excerpt }}{% elif job.output_excerpt %}{{ job.output_excerpt }}{% else %}—{% endif %}</pre></td>
         </tr>
       {% else %}
         <tr><td colspan="8" class="text-secondary">No jobs yet.</td></tr>

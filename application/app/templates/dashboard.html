@@ -62,6 +62,7 @@
             <th>Disk</th>
             <th>Uptime</th>
             <th>Services</th>
+            <th>Management</th>
             <th>Last seen</th>
           </tr>
         </thead>
@@ -79,6 +80,7 @@
               <td>{{ host.disk }}{{ meter(host.disk_value) }}</td>
               <td>{{ host.uptime }}</td>
               <td>{{ service_chips(host) }}</td>
+              <td>{% if host.management %}<span class="pill pill-{{ host.management.status|lower }}">{{ host.management.text }}</span>{% else %}—{% endif %}</td>
               <td class="small text-secondary">{{ host.last_seen or '—' }}</td>
             </tr>
           {% endfor %}

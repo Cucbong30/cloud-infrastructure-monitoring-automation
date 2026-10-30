@@ -5,6 +5,7 @@ from app.extensions import db
 from app.models import AutomationJob, Server
 from app.services.audit import record
 from app.services.automation import AutomationRejected, dispatch, enqueue_job
+from app.services.checks import refuse_unreachable_management
 from app.services.metrics import HOST_CHECKS
 
 LAB_ACTIONS = {
@@ -50,8 +51,6 @@ def suggest_remediation(server, alert=None):
         return None
     if alert is not None and alert.status == "resolved":
         return None
-    if blocked_reason(server, alert):
-        return None
     spec = LAB_ACTIONS.get((server.name or "").upper())
     if spec is None:
         return None
@@ -75,10 +74,13 @@ def maybe_remediate(alert):
         select(AutomationJob.id).where(
             AutomationJob.alert_id == alert.id,
             AutomationJob.action_key == action_key,
-            AutomationJob.status.in_(("queued", "running", "succeeded")),
+            AutomationJob.status.in_(("queued", "running", "succeeded"))
+            | (AutomationJob.verification_result == "blocked"),
         )
     )
     if existing is not None:
+        return None
+    if refuse_unreachable_management(server, action_key=action_key, alert_id=alert.id):
         return None
     record(
         "remediation.request",
