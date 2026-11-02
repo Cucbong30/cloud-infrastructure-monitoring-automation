@@ -1,241 +1,169 @@
-# Week 6 - Auto-remediation Rules
+# Week 6 - Quy tắc Auto-remediation
 
 ## Mục tiêu
 
-Tài liệu này định nghĩa các rule điều khiển controlled auto-remediation trong Week 6.
+Week 6 tập trung vào controlled auto-remediation, tức là hệ thống chỉ tự động xử lý những lỗi đã xác định rõ, có mức rủi ro thấp và có bước kiểm tra kết quả sau khi xử lý.
 
-Mục tiêu là chỉ tự động xử lý các sự cố có mức rủi ro thấp, đã được kiểm thử và có phương pháp verification rõ ràng.
+Không phải lỗi nào cũng được tự động restart. Trước khi chạy remediation, hệ thống cần kiểm tra trạng thái service, management channel và loại action được phép thực hiện.
 
-## Supported Auto-remediation Actions
+## Các action được phép Auto-remediation
 
-| Target | Failure Condition | Management Requirement | Action | Verification | Risk |
-|---|---|---|---|---|---|
-| WEB01 | Nginx :80 DOWN | SSH :22 UP | restart_nginx | HTTP :80 | LOW |
-| APP01 | App :8080 DOWN | SSH :22 UP | restart_container | HTTP :8080 | LOW |
-| WIN01 | Windows Exporter :9182 DOWN | WinRM :5985 UP | restart_windows_exporter | /metrics :9182 | LOW |
+| Target | Sự cố | Management Channel | Action | Verification |
+|---|---|---|---|---|
+| WEB01 | Nginx DOWN | SSH :22 | restart_nginx | HTTP :80 |
+| APP01 | Container DOWN | SSH :22 | restart_container | HTTP :8080 |
+| WIN01 | Windows Exporter DOWN | WinRM :5985 | restart_windows_exporter | /metrics :9182 |
 
-## Auto-remediation Rule
-
-Auto-remediation chỉ được thực hiện khi tất cả điều kiện sau đều đúng:
-
-- Failure condition được xác nhận.
-- Management channel đang hoạt động.
-- Action nằm trong allow-list.
-- Action có risk level LOW.
-- Target không ở Maintenance Mode.
-- Cooldown đã hết.
-- Không có cùng target/action đang Queued hoặc Running.
-- Retry limit chưa bị vượt.
+## Luồng xử lý chung
 
 ```
-Failure Confirmed
-+ Management UP
-+ Allow-listed
-+ Risk LOW
-+ Maintenance OFF
-+ Cooldown OK
-+ No Duplicate
-+ Retry Available
-→ AUTO
+Phát hiện lỗi
+→ Kiểm tra management channel
+→ Kiểm tra action có được phép Auto hay không
+→ Chạy remediation
+→ Kiểm tra lại service
+→ SUCCESS / RETRY / BLOCKED / MANUAL_REQUIRED
 ```
 
-## Blocked Rule
+## Case 1 - Auto-remediation thành công
 
-Remediation bị Blocked khi không thể sử dụng management channel.
+Điều kiện:
 
 ```
-Failure Confirmed
-+
-Management Channel DOWN
-→ BLOCKED
+Service DOWN
+Management channel UP
+Cấu hình service bình thường
+```
+
+Hệ thống thực hiện:
+
+```
+Run remediation
+→ Verify service
+→ SUCCESS
+```
+
+Ví dụ WEB01:
+
+```
+Nginx DOWN
++ SSH UP
+→ restart_nginx
+→ HTTP :80 trả về 200
+→ SUCCESS
+```
+
+Đây là trường hợp service chỉ bị dừng và có thể phục hồi bằng action đã được kiểm thử trước.
+
+## Case 2 - Remediation chạy thất bại
+
+Có những trường hợp server vẫn quản trị được nhưng restart service không giải quyết được lỗi.
+
+Ví dụ WEB01:
+
+```
+Nginx DOWN
++ SSH UP
++ Nginx configuration lỗi
+→ restart_nginx FAILED
+```
+
+Hệ thống xử lý:
+
+```
+Execution Failed
+→ Retry 1 lần
+→ Retry vẫn Failed
+→ MANUAL_REQUIRED
+```
+
+Retry chỉ được thực hiện một lần để tránh tạo vòng lặp restart liên tục.
+
+## Case 3 - Management Channel không khả dụng
+
+Điều kiện:
+
+```
+Service DOWN
+Management channel DOWN
 ```
 
 Ví dụ:
 
-- WEB01 Nginx DOWN + SSH DOWN.
-- APP01 container DOWN + SSH DOWN.
-- WIN01 Windows Exporter DOWN + WinRM DOWN.
-
-Trong trường hợp này không được gọi Ansible playbook.
-
-## Diagnostic Rule
-
-Diagnostic được sử dụng để thu thập thêm thông tin nhưng không thay đổi trạng thái hệ thống.
-
-Các diagnostic action có thể bao gồm:
-
-- Service status.
-- Port status.
-- Nginx configuration validation.
-- Docker container status.
-- CPU usage.
-- Memory usage.
-- Disk usage.
-- SSH / WinRM availability.
-
 ```
-Alert
-→ Collect Diagnostic Information
-→ No State Change
+Nginx DOWN
++ SSH DOWN
 ```
 
-## Manual Intervention Rule
+Hệ thống không được chạy remediation.
 
-Manual intervention được yêu cầu trong các trường hợp:
+Kết quả:
 
-- Server hoặc VM unreachable.
-- Action có mức risk MEDIUM hoặc HIGH.
-- Action không nằm trong allow-list.
-- Execution fail sau retry limit.
-- Verification fail.
-- Disk cleanup hoặc delete file.
-- Restart network.
-- Firewall change.
+```
+BLOCKED
+→ Không gọi playbook
+→ Warning: Management channel unavailable
+→ MANUAL_REQUIRED
+```
+
+Trường hợp này được tách riêng với Execution Failed vì hệ thống chưa thể kết nối tới target để thực hiện action.
+
+## Case 4 - Verification Failed
+
+Có trường hợp command restart chạy thành công nhưng service sau khi khởi động lại vẫn không đạt trạng thái mong muốn.
+
+Ví dụ WEB01:
+
+```
+Nginx restart SUCCESS
++ Nginx chạy ở port :8081
++ Hệ thống yêu cầu HTTP :80
+→ Verification FAILED
+```
+
+Hệ thống xử lý:
+
+```
+Execution SUCCESS
+→ Verification FAILED
+→ Dừng Auto-remediation
+→ MANUAL_REQUIRED
+```
+
+Trường hợp này không retry tự động vì action đã chạy thành công nhưng service vẫn không trở về trạng thái mong muốn.
+
+## Các trường hợp không Auto-remediation
+
+Các action sau không được tự động thực hiện trong Week 6:
+
 - Reboot hoặc shutdown server.
-- Start/stop VM.
+- Thay đổi network.
+- Thay đổi firewall.
+- Xóa file.
+- Disk cleanup.
+- CPU, RAM hoặc Disk usage cao nhưng chưa xác định được remediation an toàn.
 
-## Execution Failure Rule
+Các trường hợp này chỉ thực hiện diagnostic và chuyển cho người vận hành kiểm tra.
 
-Nếu lần chạy đầu tiên bị execution failure:
+## Trạng thái cuối
 
-```
-Attempt 1
-→ Execution Failed
-→ Retry 1 time
-```
-
-Nếu lần retry vẫn thất bại:
-
-```
-Retry Failed
-→ STOP AUTO
-→ Manual Intervention Required
-```
-
-## Verification Failure Rule
-
-Sau khi execution hoàn tất, hệ thống phải thực hiện post-check.
-
-Nếu command chạy thành công nhưng verification không pass:
-
-```
-Execution Success
-+
-Verification Failed
-→ STOP AUTO
-→ Manual Intervention Required
-```
-
-Verification Failed không được auto retry.
-
-## Cooldown Rule
-
-Giá trị cooldown ban đầu:
-
-```
-5 minutes
-```
-
-Trong thời gian cooldown:
-
-```
-Same Target
-+
-Same Action
-+
-Cooldown Active
-→ SKIP
-```
-
-Mục tiêu là tránh remediation loop.
-
-## Duplicate Prevention Rule
-
-Không tạo thêm job nếu đã có cùng target/action ở trạng thái:
-
-- Queued.
-- Running.
-
-```
-Same Target
-+
-Same Action
-+
-Queued / Running
-→ SKIP DUPLICATE
-```
-
-## Maintenance Rule
-
-Khi:
-
-```
-Maintenance Mode = ON
-```
-
-thì auto-remediation bị tắt.
-
-Monitoring và diagnostic vẫn có thể tiếp tục hoạt động.
-
-```
-Alert
-+
-Maintenance ON
-→ SKIP AUTO
-```
-
-## Resource Threshold Rules
-
-### Disk
-
-```
-Disk > 80%
-→ Warning
-→ Diagnostic
-```
-
-```
-Disk > 90%
-→ Critical
-→ Diagnostic
-→ Manual Intervention
-```
-
-Không auto cleanup hoặc delete file.
-
-### CPU
-
-```
-CPU > 85% for 5 minutes
-→ Warning
-→ Diagnostic
-```
-
-Không auto kill process hoặc restart server.
-
-### Memory
-
-```
-Memory > 90% for 5 minutes
-→ Warning
-→ Diagnostic
-```
-
-Không auto kill process hoặc restart server.
-
-## Final Decision
-
-| Condition | Decision |
+| Điều kiện | Kết quả |
 |---|---|
-| Safe service failure + management UP | AUTO |
-| Service failure + management DOWN | BLOCKED |
-| Management DOWN but service still UP | DEGRADED |
-| Diagnostic threshold alert | DIAGNOSTIC |
-| Execution failed first attempt | RETRY |
-| Retry failed | MANUAL |
-| Verification failed | MANUAL |
-| Cooldown active | SKIP |
-| Duplicate job | SKIP |
-| Maintenance Mode | SKIP |
-| High-risk action | MANUAL |
-| Server unreachable | MANUAL |
+| Service phục hồi và verification pass | SUCCESS |
+| Execution fail lần đầu | RETRY |
+| Retry vẫn execution fail | MANUAL_REQUIRED |
+| Management channel unavailable | BLOCKED |
+| Execution success nhưng verification fail | MANUAL_REQUIRED |
+| Action không nằm trong nhóm được Auto | MANUAL_REQUIRED |
+
+## Nguyên tắc
+
+```
+Detect
+→ Check
+→ Remediate
+→ Verify
+→ Dừng đúng lúc nếu automation không đủ khả năng xử lý
+```
+
+Mục tiêu của hệ thống không phải tự động sửa mọi sự cố mà là tự xử lý các lỗi đã biết, có mức rủi ro thấp và chuyển sang manual khi không còn đủ điều kiện để xử lý an toàn.
