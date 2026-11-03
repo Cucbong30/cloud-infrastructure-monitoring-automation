@@ -1,5 +1,4 @@
 import os
-from datetime import timezone
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, redirect, render_template, request, url_for
@@ -8,9 +7,18 @@ from sqlalchemy import text
 
 from app.config import ROOT, build_config
 from app.extensions import csrf, db, login_manager, migrate
-from app.presentation import badge_class
+from app.presentation import (
+    audit_message,
+    badge_class,
+    format_clock,
+    job_duration_seconds,
+    job_outcome_label,
+    job_status_label,
+    verification_label,
+    verification_summary,
+)
 
-PUBLIC_ENDPOINTS = {"healthz", "auth.login", "static", "index"}
+PUBLIC_ENDPOINTS = {"healthz", "auth.login", "static", "index", "webhooks.alertmanager"}
 
 
 def create_app(test_config=None):
@@ -67,15 +75,21 @@ def create_app(test_config=None):
 
     @app.template_filter("dt")
     def format_dt(value):
-        if not value:
-            return "—"
-        if getattr(value, "tzinfo", None) is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
-        return value.strftime("%Y-%m-%d %H:%M UTC")
+        return format_clock(value) if value else "—"
 
     @app.context_processor
     def inject_ui():
-        return {"badge_class": badge_class, "grafana_url": app.config.get("GRAFANA_BASE_URL", "")}
+        return {
+            "audit_message": audit_message,
+            "badge_class": badge_class,
+            "grafana_url": app.config.get("GRAFANA_BASE_URL", ""),
+            "job_status_label": job_status_label,
+            "job_outcome_label": job_outcome_label,
+            "job_duration_seconds": job_duration_seconds,
+            "verification_label": verification_label,
+            "verification_summary": verification_summary,
+            "automation_executor": app.config.get("AUTOMATION_EXECUTOR", "mock"),
+        }
 
     @app.errorhandler(400)
     def bad_request(_exc):

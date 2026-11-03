@@ -7,7 +7,11 @@ from app.authz import roles_required
 from app.extensions import db
 from app.forms import ServerForm
 from app.models import Server, utcnow
+from app.presentation import job_outcome_label
 from app.services.audit import record
+from app.services.automation import AutomationRejected, RemediationUnavailable, queue_and_dispatch
+from app.services.checks import management_block, management_status
+from app.services.remediation import blocked_reason, suggest_remediation
 from app.validation import blank_to_none
 
 bp = Blueprint("servers", __name__, url_prefix="/servers")
@@ -76,7 +80,48 @@ def detail(server_id):
         abort(404)
     alerts = sorted(server.alerts, key=lambda alert: alert.created_at, reverse=True)
     jobs = sorted(server.jobs, key=lambda job: job.created_at, reverse=True)
-    return render_template("servers/detail.html", server=server, alerts=alerts, jobs=jobs)
+    return render_template(
+        "servers/detail.html",
+        server=server,
+        alerts=alerts,
+        jobs=jobs,
+        suggestion=suggest_remediation(server),
+        management=management_status(server),
+        management_message=management_block(server),
+        host_message=blocked_reason(server),
+    )
+
+
+@bp.post("/<int:server_id>/remediate")
+@roles_required("operator", "admin")
+def remediate(server_id):
+    server = db.session.get(Server, server_id)
+    if server is None:
+        abort(404)
+    suggestion = suggest_remediation(server)
+    if suggestion is None:
+        abort(400)
+    if blocked_reason(server) and management_block(server) is None:
+        flash(blocked_reason(server), "warning")
+        return redirect(url_for("servers.detail", server_id=server.id))
+    try:
+        job = queue_and_dispatch(
+            server_id=server.id,
+            action_key=suggestion["action_key"],
+            parameters=suggestion["parameters"],
+            actor=current_user,
+        )
+    except RemediationUnavailable as exc:
+        flash(exc.reason, "warning")
+        return redirect(url_for("servers.detail", server_id=server.id))
+    except AutomationRejected:
+        flash("Remediation was rejected.", "warning")
+        return redirect(url_for("servers.detail", server_id=server.id))
+    flash(
+        job.block_reason or f"{suggestion['label']} finished with status {job_outcome_label(job)}.",
+        "success" if job.status == "succeeded" else "warning",
+    )
+    return redirect(url_for("automation.detail", job_id=job.id))
 
 
 @bp.route("/new", methods=["GET", "POST"])

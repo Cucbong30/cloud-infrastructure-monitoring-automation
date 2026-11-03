@@ -16,7 +16,7 @@
           <td>{{ entry.action }}</td>
           <td>{{ entry.resource_type }} {{ entry.resource_id or '' }}</td>
           <td>{{ entry.ip_address or '—' }}</td>
-          <td><code class="small">{{ entry.details_json }}</code></td>
+          <td>{{ audit_message(entry) }}</td>
         </tr>
       {% else %}
         <tr><td colspan="6" class="text-secondary">No audit records.</td></tr>

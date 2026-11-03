@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
@@ -21,8 +20,8 @@ def _alert(name, fingerprint):
         description="detail",
         state="firing",
         starts_at=datetime(2026, 10, 6, 4, tzinfo=timezone.utc),
-        labels={"instance": "web-01.local", "alertname": name},
-        instance="web-01.local",
+        labels={"instance": "192.168.10.11:9100", "alertname": name},
+        instance="192.168.10.11:9100",
     )
 
 
@@ -37,22 +36,27 @@ def test_remediation_creates_one_job_and_audit(seeded):
         alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-remediate"))
         jobs = db.session.scalars(select(AutomationJob).where(AutomationJob.alert_id == alert.id)).all()
         assert len(jobs) == 1
-        assert jobs[0].action_key == "restart_service"
+        assert jobs[0].action_key == "restart_nginx"
         assert jobs[0].trigger_source == "remediation"
         assert jobs[0].status == "succeeded"
+        assert jobs[0].verification_result == "passed"
+        job_audit = db.session.scalar(
+            select(AuditLog).where(AuditLog.action == "remediation.verified", AuditLog.resource_id == str(jobs[0].id))
+        )
+        assert job_audit is not None
         audits = db.session.scalars(select(AuditLog).where(AuditLog.resource_id == str(alert.id))).all()
         actions = {entry.action for entry in audits}
         assert "remediation.request" in actions
         assert db.session.scalar(select(func.count()).select_from(AutomationJob)) == before_jobs + 1
 
 
-def test_disk_cleanup_is_dry_run_and_failed_job_can_retry(seeded):
+def test_failed_remediation_can_retry(seeded):
     seeded.config["AUTO_REMEDIATION_ENABLED"] = True
     with seeded.app_context():
-        sync_alerts(FakePrometheus([_alert("disk_high", "fp-disk")]))
-        alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-disk"))
+        sync_alerts(FakePrometheus([_alert("service_down", "fp-retry")]))
+        alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-retry"))
         job = db.session.scalar(select(AutomationJob).where(AutomationJob.alert_id == alert.id))
-        assert json.loads(job.parameters_json)["dry_run"] == "true"
+        assert job.action_key == "restart_nginx"
         job.status = "failed"
         db.session.commit()
         retried = maybe_remediate(alert)

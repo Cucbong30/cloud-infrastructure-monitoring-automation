@@ -1,0 +1,10 @@
+---
+# Copy of the playbook that runs on MON01 at ~/ansible/playbooks/restart-windows-exporter.yml
+- name: restart windows exporter on WIN01
+  hosts: win01
+  gather_facts: false
+  tasks:
+    - name: restart windows_exporter
+      ansible.windows.win_service:
+        name: windows_exporter
+        state: restarted

@@ -1,0 +1,11 @@
+---
+# Copy of the playbook that runs on MON01 at ~/ansible/playbooks/restart-nginx.yml
+- name: restart nginx on WEB01
+  hosts: web01
+  gather_facts: false
+  tasks:
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+      become: true

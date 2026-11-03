@@ -7,8 +7,8 @@ from app.extensions import db
 from app.models import AuditLog, utcnow
 
 
-def record(action, resource_type, resource_id=None, details=None, user_id=None):
-    if user_id is None and has_request_context() and current_user.is_authenticated:
+def record(action, resource_type, resource_id=None, details=None, user_id=None, *, system=False):
+    if not system and user_id is None and has_request_context() and current_user.is_authenticated:
         user_id = current_user.id
     payload = json.dumps(details or {}, default=str, sort_keys=True)
     if len(payload) > 4000:

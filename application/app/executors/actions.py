@@ -9,21 +9,27 @@ class ActionDefinition:
     dry_run: bool = False
 
 
+# Playbooks live on the Ansible controller MON01. The portal never accepts a path from the user.
 ACTIONS = {
-    "restart_service": ActionDefinition(
-        "restart_service",
-        "automation/ansible/playbooks/restart_service.yml",
-        ("service_name",),
+    "restart_nginx": ActionDefinition(
+        "restart_nginx",
+        "~/ansible/playbooks/restart-nginx.yml",
+        (),
     ),
     "restart_container": ActionDefinition(
         "restart_container",
-        "automation/ansible/playbooks/restart_container.yml",
+        "~/ansible/playbooks/restart-app-container.yml",
         ("container_name",),
     ),
-    "disk_cleanup": ActionDefinition(
-        "disk_cleanup",
-        "automation/ansible/playbooks/disk_cleanup.yml",
-        ("path",),
-        dry_run=True,
+    "restart_windows_exporter": ActionDefinition(
+        "restart_windows_exporter",
+        "~/ansible/playbooks/restart-windows-exporter.yml",
+        ("service_name",),
     ),
+}
+
+LAB_TARGETS = {
+    "restart_nginx": ("WEB01", "192.168.10.11", {}),
+    "restart_container": ("APP01", "192.168.10.12", {"container_name": "app01-web"}),
+    "restart_windows_exporter": ("WIN01", "192.168.10.13", {"service_name": "windows_exporter"}),
 }
