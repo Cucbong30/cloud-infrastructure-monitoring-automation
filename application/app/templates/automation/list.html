@@ -63,7 +63,7 @@
         <th>Server</th>
         <th>Action</th>
         <th>Trigger</th>
-        <th>Result</th>
+        <th>Final status</th>
         <th>Output / error</th>
       </tr>
     </thead>
@@ -75,7 +75,7 @@
           <td>{% set seconds = job_duration_seconds(job) %}{% if seconds is not none %}{{ seconds }}s{% else %}—{% endif %}</td>
           <td>{% if job.server %}<a href="{{ url_for('servers.detail', server_id=job.server.id) }}">{{ job.server.name }}</a>{% else %}—{% endif %}</td>
           <td><a href="{{ url_for('automation.detail', job_id=job.id) }}">{{ job.action_key }}</a>{% if job.alert_id %} <span class="text-secondary small">alert #{{ job.alert_id }}</span>{% endif %}</td>
-          <td><span class="badge text-bg-{{ badge_class(job.trigger_source) }}">{{ job.trigger_source }}</span></td>
+          <td><span class="badge text-bg-{{ badge_class(trigger_label(job)) }}">{{ trigger_label(job) }}</span></td>
           <td><span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ job_outcome_label(job) }}</span></td>
           <td><pre class="output small mb-0">{% if job.block_reason %}{{ job.block_reason }}{% elif job.stderr_excerpt %}{{ job.stderr_excerpt }}{% elif job.output_excerpt %}{{ job.output_excerpt }}{% else %}—{% endif %}</pre></td>
         </tr>

@@ -2,7 +2,7 @@ from datetime import timezone
 
 from flask import Blueprint, abort, current_app, jsonify, render_template, url_for
 from flask_login import current_user
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from app.extensions import db
 from app.models import Alert, AuditLog, AutomationJob, Server
@@ -10,8 +10,13 @@ from app.presentation import audit_message, format_clock, job_outcome_label, ver
 from app.services.checklog import observe_hosts
 from app.services.checks import ACTION_CHANNELS, MANAGEMENT_CHANNELS, management_status
 from app.services.inventory import LAB_TARGETS, canonical_server_name
-from app.services.metrics import collect_metrics
-from app.services.remediation import LAB_ACTIONS, suggest_remediation, unreachable_message
+from app.services.liveboard import load_live_board
+from app.services.remediation import (
+    LAB_ACTIONS,
+    schedule_auto_remediation,
+    suggest_remediation,
+    unreachable_message,
+)
 from app.services.prometheus import client_from_app
 
 bp = Blueprint("dashboard", __name__)
@@ -36,11 +41,6 @@ def events(name):
     host = next((item for item in payload["hosts"] if item["name"] == name), None)
     if host is None:
         abort(404)
-    server = db.session.scalar(select(Server).where(Server.name == name))
-    if server is not None:
-        channel = management_status(server)
-        if channel is not None:
-            host["management"] = channel
     return jsonify(
         {
             "host": host,
@@ -58,7 +58,7 @@ def _dashboard_context():
 
 
 def _dashboard_payload():
-    metrics, hosts, prometheus = collect_metrics()
+    metrics, hosts, prometheus, cached = load_live_board()
     servers = {server.name: server for server in db.session.scalars(select(Server))}
     for host in hosts:
         server = servers.get(host["name"])
@@ -67,15 +67,18 @@ def _dashboard_payload():
             host["href"] = url_for("servers.detail", server_id=server.id)
             host["last_seen"] = _iso(server.last_seen_at)
             host["ip"] = server.ip_address
-            channel = management_status(server)
-            if channel is not None:
-                host["management"] = channel
+            host["maintenance"] = server.status == "maintenance"
+            if not cached:
+                channel = management_status(server)
+                if channel is not None:
+                    host["management"] = channel
         else:
             host["href"] = url_for("servers.index")
             host["last_seen"] = _iso(host.get("last_seen_at"))
         host.pop("last_seen_at", None)
         _annotate_problem(host)
-    observe_hosts(hosts)
+    if not cached:
+        observe_hosts(hosts)
 
     lab_names = set(LAB_TARGETS)
     firing = [
@@ -87,6 +90,8 @@ def _dashboard_payload():
         )
         if alert.server and alert.server.name in lab_names
     ][:8]
+    if not cached:
+        schedule_auto_remediation(firing)
     resolved_count = db.session.scalar(select(func.count()).where(Alert.status == "resolved")) or 0
     lab_counts = {"Healthy": 0, "Degraded": 0, "Unreachable": 0}
     for host in hosts:
@@ -264,22 +269,15 @@ def _host_events(name, host):
             .where(
                 AuditLog.resource_type != "check",
                 or_(
-                    AuditLog.resource_id == str(server.id),
-                    AuditLog.details_json.contains(name),
+                    and_(AuditLog.resource_type == "server", AuditLog.resource_id == str(server.id)),
+                    AuditLog.details_json.contains(f'"target": "{name}"'),
+                    AuditLog.details_json.contains(f'"host": "{name}"'),
                 ),
             )
             .order_by(AuditLog.created_at.desc())
             .limit(12)
         ):
-            events.append(
-                {
-                    "source": "audit",
-                    "level": "info",
-                    "title": row.action,
-                    "message": row.details_json or row.action,
-                    "at": _iso(row.created_at),
-                }
-            )
+            events.append(_audit_event(row))
         for job in db.session.scalars(
             select(AutomationJob).where(AutomationJob.server_id == server.id).order_by(AutomationJob.created_at.desc()).limit(8)
         ):
@@ -309,6 +307,62 @@ def _host_events(name, host):
     for event in events:
         event["at_label"] = format_clock(event.get("at"))
     return events[:40]
+
+
+def _audit_event(row):
+    data = {}
+    try:
+        import json
+
+        parsed = json.loads(row.details_json or "{}")
+        if isinstance(parsed, dict):
+            data = parsed
+    except (TypeError, json.JSONDecodeError):
+        data = {}
+    titles = {
+        "auto_remediation.skipped": "Auto-remediation skipped",
+        "auto_remediation.blocked": "Auto-remediation blocked",
+        "auto_remediation.failed": "Auto-remediation failed",
+        "auto_remediation.executed": "Remediation execution succeeded",
+        "auto_remediation.verification_failed": "Verification failed after remediation",
+        "auto_remediation.verified": "Auto-remediation verified",
+        "auto_remediation.started": "Auto-remediation started",
+        "auto_remediation.requested": "Auto-remediation requested",
+        "auto_remediation.retry": "Auto-remediation retry",
+        "manual_intervention.required": "Manual intervention required",
+        "incident.created": "Incident created",
+        "incident.resolved": "Incident resolved",
+        "management.check": "Management check",
+        "remediation.blocked": "Remediation blocked",
+        "remediation.execution_succeeded": "Remediation execution succeeded",
+        "remediation.verification_failed": "Verification failed after remediation",
+        "remediation.verified": "Remediation verified",
+        "remediation.failed": "Remediation failed",
+    }
+    reason = data.get("reason")
+    title = titles.get(row.action, row.action)
+    if reason and reason not in title.lower():
+        title = f"{title}: {reason}"
+    message = data.get("message") or audit_message(row)
+    if message == row.details_json:
+        message = row.action
+    if data.get("result") == "SUCCESS" or row.action.endswith("execution_succeeded"):
+        level = "up"
+    elif row.action.endswith("failed"):
+        level = "error"
+    elif row.action.endswith(("skipped", "blocked")) or row.action == "manual_intervention.required":
+        level = "warning"
+    elif row.action.endswith("verified"):
+        level = "up"
+    else:
+        level = "info"
+    return {
+        "source": "audit",
+        "level": level,
+        "title": title,
+        "message": message,
+        "at": _iso(row.created_at),
+    }
 
 
 def _check_event(row):

@@ -16,7 +16,7 @@ from app.services.automation import (
     retry_job,
 )
 from app.services.checks import management_block, management_status
-from app.services.remediation import LAB_ACTIONS, blocked_reason
+from app.services.remediation import LAB_ACTIONS, blocked_reason, job_auto_context
 
 bp = Blueprint("automation", __name__, url_prefix="/automation")
 
@@ -113,7 +113,13 @@ def detail(job_id):
     retries = db.session.scalars(
         select(AutomationJob).where(AutomationJob.retry_of_job_id == job.id).order_by(AutomationJob.id)
     ).all()
-    return render_template("automation/detail.html", job=job, audits=audits, retries=retries)
+    return render_template(
+        "automation/detail.html",
+        job=job,
+        audits=audits,
+        retries=retries,
+        auto=job_auto_context(job),
+    )
 
 
 @bp.post("/jobs/<int:job_id>/retry")

@@ -67,6 +67,8 @@ def build_config():
         "PROMETHEUS_VERIFY_SSL": _bool("PROMETHEUS_VERIFY_SSL", True),
         "AUTOMATION_EXECUTOR": os.environ.get("AUTOMATION_EXECUTOR", "mock").strip() or "mock",
         "AUTO_REMEDIATION_ENABLED": _bool("AUTO_REMEDIATION_ENABLED", False),
+        "AUTO_REMEDIATION_COOLDOWN_SECONDS": _int("AUTO_REMEDIATION_COOLDOWN_SECONDS", 120),
+        "AUTO_REMEDIATION_MAX_RETRIES": _int("AUTO_REMEDIATION_MAX_RETRIES", 1),
         "ANSIBLE_CONTROLLER_HOST": (os.environ.get("ANSIBLE_CONTROLLER_HOST") or "192.168.10.10").strip(),
         "ANSIBLE_CONTROLLER_USER": (os.environ.get("ANSIBLE_CONTROLLER_USER") or "").strip(),
         "ANSIBLE_CONTROLLER_KEY": (os.environ.get("ANSIBLE_CONTROLLER_KEY") or "").strip(),

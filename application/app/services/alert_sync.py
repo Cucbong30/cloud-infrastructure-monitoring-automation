@@ -42,7 +42,7 @@ def sync_alerts(client=None):
             resolved += 1
         elif outcome == "reopened":
             reopened += 1
-        if opened and alert is not None:
+        if alert is not None and alert.status == "firing":
             job = maybe_remediate(alert)
             if job is not None:
                 remediated += 1

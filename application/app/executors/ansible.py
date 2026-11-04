@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import time
 
@@ -48,7 +49,7 @@ def controller_port_open(host, port, timeout=2):
         "-o",
         "StrictHostKeyChecking=accept-new",
         "-o",
-        "ConnectTimeout=10",
+        "ConnectTimeout=4",
     ]
     if key_file:
         command.extend(["-i", key_file])
@@ -67,6 +68,59 @@ def controller_port_open(host, port, timeout=2):
         ok = False
     _PORT_CACHE[(host, port)] = (time.monotonic(), ok)
     return ok, None
+
+
+_TASK_HEADER = re.compile(r"^TASK \[(?P<name>[^\]]+)\]", re.MULTILINE)
+_TASK_RESULT = re.compile(r"^(?P<kind>ok|changed|failed|fatal|unreachable|skipping)\s*:", re.IGNORECASE | re.MULTILINE)
+
+
+def playbook_failure_stage(output, stderr=""):
+    """Return verification_failed when the fix task passed and a later check task failed.
+
+    A non-zero ansible-playbook exit code is an execution failure only when the
+    remediation task itself failed. Waiting for the service port is a post-check.
+    """
+    tasks = _playbook_tasks(f"{output or ''}\n{stderr or ''}")
+    if not tasks:
+        return None, None
+    remediation = [task for task in tasks if not _is_verification_task(task["name"])]
+    verification = [task for task in tasks if _is_verification_task(task["name"])]
+    remediation_failed = any(task["result"] in {"failed", "unreachable"} for task in remediation)
+    remediation_ok = any(task["result"] in {"ok", "changed"} for task in remediation)
+    failed_check = next(
+        (task for task in verification if task["result"] in {"failed", "unreachable"}),
+        None,
+    )
+    if remediation_ok and failed_check is not None and not remediation_failed:
+        return "verification_failed", failed_check["name"]
+    if remediation_failed:
+        failed = next(task for task in remediation if task["result"] in {"failed", "unreachable"})
+        return "execution_failed", failed["name"]
+    return None, None
+
+
+def _playbook_tasks(text):
+    headers = list(_TASK_HEADER.finditer(text))
+    tasks = []
+    for index, header in enumerate(headers):
+        end = headers[index + 1].start() if index + 1 < len(headers) else len(text)
+        body = text[header.end() : end]
+        found = list(_TASK_RESULT.finditer(body))
+        kind = found[-1].group("kind").lower() if found else None
+        if kind == "fatal":
+            kind = "failed"
+        elif kind is None and re.search(r"\bFAILED!\b", body):
+            kind = "failed"
+        tasks.append({"name": header.group("name").strip(), "result": kind})
+    return tasks
+
+
+def _is_verification_task(name):
+    return re.search(
+        r"\b(wait|verify|verification|post-check|postcheck|health|probe|listen|http|uri|url)\b",
+        name or "",
+        re.IGNORECASE,
+    ) is not None
 
 
 def allowed_parameters(server, action_key, parameters):

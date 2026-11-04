@@ -74,7 +74,7 @@
                 <div class="text-secondary small">{{ host.role }}</div>
               </td>
               <td>{{ host.ip }}</td>
-              <td>{{ pill(host.status) }}</td>
+              <td>{{ pill(host.status) }}{% if host.maintenance %} <span class="pill pill-maintenance">Maintenance</span>{% endif %}</td>
               <td>{{ host.cpu }}{{ meter(host.cpu_value) }}</td>
               <td>{{ host.memory }}{{ meter(host.memory_value) }}</td>
               <td>{{ host.disk }}{{ meter(host.disk_value) }}</td>
@@ -181,5 +181,5 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='dashboard.js', v=2) }}"></script>
 {% endblock %}
