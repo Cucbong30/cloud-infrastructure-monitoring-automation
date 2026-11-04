@@ -30,7 +30,7 @@ Báo cáo: [week-06-application.md](week-06-application.md). Bản Word: [week-0
 | Allow-list tuần 4 | [aecb279](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/aecb279c07407ae612b4b9476fec702ddeaa1eaf) | cùng link |
 | Báo cáo tuần 5 | [week05](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/9fb0dae6b4e5fbdbcb18c807008d1bf2eca753b2/application/docs/week05) | [9fb0dae](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/9fb0dae6b4e5fbdbcb18c807008d1bf2eca753b2) |
 | Code tuần 6 | [75601e4](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/75601e49a81e8f4e8cf72a4e6df7ed878b5e3517) | cùng link |
-| Ảnh và báo cáo tuần 6 | [screenshots](screenshots) | Đẩy cùng thư mục `week06` |
+| Ảnh và báo cáo tuần 6 | [week06](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/e10dbe17d5d06e81e7d2bcf4b0e4988bdf070942/application/docs/week06) | [e10dbe1](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/e10dbe17d5d06e81e7d2bcf4b0e4988bdf070942) |
 
 ## Ảnh
 
