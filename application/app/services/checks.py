@@ -29,6 +29,23 @@ SERVICE_CHECKS = {
 }
 
 
+def verification_notice(action_key):
+    """Human wording for a successful command whose post-check failed."""
+    spec = SERVICE_CHECKS.get(action_key)
+    port = None
+    if spec and ":" in spec[2]:
+        tail = spec[2].rsplit(":", 1)[-1].strip()
+        if tail.isdigit():
+            port = tail
+    where = f" on port {port}" if port else ""
+    reason = f"The remediation command completed successfully, but the post-check{where} failed."
+    message = (
+        "Remediation completed, but verification failed. "
+        f"{reason} No retry was performed. Manual intervention is required."
+    )
+    return reason, message
+
+
 def _management_probe():
     """Ansible reaches targets from MON01, so the gate uses that path."""
     try:

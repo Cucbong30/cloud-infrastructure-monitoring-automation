@@ -7,13 +7,17 @@ from sqlalchemy import text
 
 from app.config import ROOT, build_config
 from app.extensions import csrf, db, login_manager, migrate
+from app.executors.actions import action_risk
 from app.presentation import (
+    audit_facts,
     audit_message,
     badge_class,
     format_clock,
+    execution_result_label,
     job_duration_seconds,
     job_outcome_label,
     job_status_label,
+    trigger_label,
     verification_label,
     verification_summary,
 )
@@ -49,6 +53,10 @@ def create_app(test_config=None):
     register_blueprints(app)
     register_cli(app)
 
+    from app.services.liveboard import start_live_board
+
+    start_live_board(app)
+
     @app.get("/healthz")
     def healthz():
         try:
@@ -80,14 +88,19 @@ def create_app(test_config=None):
     @app.context_processor
     def inject_ui():
         return {
+            "action_risk": action_risk,
+            "audit_facts": audit_facts,
             "audit_message": audit_message,
             "badge_class": badge_class,
             "grafana_url": app.config.get("GRAFANA_BASE_URL", ""),
             "job_status_label": job_status_label,
             "job_outcome_label": job_outcome_label,
+            "execution_result_label": execution_result_label,
             "job_duration_seconds": job_duration_seconds,
+            "trigger_label": trigger_label,
             "verification_label": verification_label,
             "verification_summary": verification_summary,
+            "auto_remediation_enabled": app.config.get("AUTO_REMEDIATION_ENABLED", False),
             "automation_executor": app.config.get("AUTOMATION_EXECUTOR", "mock"),
         }
 

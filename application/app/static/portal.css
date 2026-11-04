@@ -150,6 +150,7 @@ a { color: var(--blue); }
 .pill-degraded, .pill-warning, .pill-acknowledged { background: #854d0e; color: #fef3c7; }
 .pill-unreachable, .pill-down, .pill-critical, .pill-firing { background: #991b1b; color: #fee2e2; }
 .pill-info { background: #1e3a8a; color: #dbeafe; }
+.pill-maintenance { background: #334155; color: #e2e8f0; }
 
 .meter {
   height: 7px;

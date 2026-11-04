@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Alerts · Operations Portal{% endblock %}
 {% block content %}
-<h1 class="h3 mb-3">Alerts</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Alerts</h1>
+  {% if auto_remediation_enabled %}
+    <span class="badge text-bg-success">Auto-remediation enabled</span>
+  {% else %}
+    <span class="badge text-bg-secondary">Auto-remediation disabled</span>
+  {% endif %}
+</div>
 <form class="row g-2 mb-3" method="get">
   <div class="col-auto">
     <select class="form-select" name="severity">
@@ -40,6 +47,9 @@
               <div class="alert alert-warning py-1 px-2 mb-2">{{ blocked[alert.id] }}</div>
             {% elif suggestions.get(alert.id) and alert.status != 'resolved' %}
               <div class="alert alert-info py-1 px-2 mb-2">Suggested action: {{ suggestions[alert.id].label }}</div>
+            {% endif %}
+            {% if notices.get(alert.id) %}
+              <div class="alert {{ 'alert-info' if 'Reason: diagnostic' in notices[alert.id] else 'alert-warning' }} py-1 px-2 mb-2">{{ notices[alert.id] }}</div>
             {% endif %}
             {% if alert.jobs %}
               <div class="small mb-1">

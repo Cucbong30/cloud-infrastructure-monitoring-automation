@@ -242,6 +242,14 @@ def _apply_live_status(hosts):
             continue
         server = db.session.scalar(select(Server).where(Server.name == host["name"]))
         if server is None:
+            host["maintenance"] = False
+            continue
+        host["maintenance"] = server.status == "maintenance"
+        if server.status == "maintenance":
+            if mapped in {"online", "warning"}:
+                server.last_seen_at = now
+            host["server_id"] = server.id
+            host["last_seen_at"] = server.last_seen_at
             continue
         server.status = mapped
         if mapped in {"online", "warning"}:

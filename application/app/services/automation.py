@@ -3,14 +3,15 @@ import re
 
 from flask import abort, current_app
 
+from app.executors.ansible import playbook_failure_stage
 from app.executors.base import ExecutionResult
 from app.extensions import db
 from app.executors import EXECUTORS, get_executor
-from app.executors.actions import ACTIONS
+from app.executors.actions import ACTIONS, DENIED_ACTIONS
 from app.executors.ansible import allowed_parameters
 from app.models import AutomationJob, Server, utcnow
 from app.services.audit import record
-from app.services.checks import management_refusal, refuse_unreachable_management, verify_recovery
+from app.services.checks import management_refusal, refuse_unreachable_management, verification_notice, verify_recovery
 from app.validation import TOKEN_RE
 
 REJECTED_PARAMETER_KEYS = {"command", "cmd", "playbook", "script", "shell", "playbook_path"}
@@ -30,6 +31,10 @@ class RemediationUnavailable(Exception):
 def validate_parameters(action_key, parameters):
     if not isinstance(parameters, dict):
         raise AutomationRejected("Invalid parameters.")
+    if action_key in DENIED_ACTIONS:
+        raise AutomationRejected(
+            "This action is diagnostic only. Auto-remediation does not reboot, clean up disk, delete files, or change the network."
+        )
     if action_key not in ACTIONS:
         raise AutomationRejected("Action is not allowed.")
     if REJECTED_PARAMETER_KEYS & set(parameters):
@@ -66,14 +71,25 @@ def scrub_output(output, limit):
     return text
 
 
-def enqueue_job(*, server_id, action_key, parameters, trigger_source, requested_by=None, alert_id=None, retry_of_job_id=None):
+def enqueue_job(
+    *,
+    server_id,
+    action_key,
+    parameters,
+    trigger_source,
+    requested_by=None,
+    alert_id=None,
+    retry_of_job_id=None,
+    incident_id=None,
+    attempt=None,
+):
     action = validate_parameters(action_key, parameters)
     server = db.session.get(Server, server_id) if server_id is not None else None
     if server is None or not server.is_active:
         raise AutomationRejected("Server is not available.")
     if not allowed_parameters(server, action.key, parameters):
         raise AutomationRejected("Action is not allowed for this server.")
-    if trigger_source not in {"manual", "remediation", "system"}:
+    if trigger_source not in {"manual", "remediation", "system", "auto"}:
         raise AutomationRejected("Invalid trigger.")
     executor_name = current_app.config.get("AUTOMATION_EXECUTOR", "mock")
     if executor_name not in EXECUTORS:
@@ -89,6 +105,8 @@ def enqueue_job(*, server_id, action_key, parameters, trigger_source, requested_
         status="queued",
         created_at=utcnow(),
         retry_of_job_id=retry_of_job_id,
+        incident_id=incident_id,
+        attempt=attempt,
     )
     db.session.add(job)
     db.session.commit()
@@ -101,10 +119,29 @@ def enqueue_job(*, server_id, action_key, parameters, trigger_source, requested_
             "trigger_source": trigger_source,
             "alert_id": alert_id,
             "server_id": server.id,
+            "incident_id": incident_id,
+            "attempt": attempt,
         },
         user_id=requested_by,
     )
     return job
+
+
+def _job_audit(job, server, result, reason, **extra):
+    details = {
+        "target": None if server is None else server.name,
+        "action": job.action_key,
+        "action_key": job.action_key,
+        "trigger": job.trigger_source,
+        "result": result,
+        "reason": reason,
+        "message": extra.pop("message", reason),
+        "alert_id": job.alert_id,
+        "exit_code": job.exit_code,
+        "server_id": job.server_id,
+    }
+    details.update(extra)
+    return details
 
 
 def dispatch(job_id, actor=None):
@@ -112,12 +149,14 @@ def dispatch(job_id, actor=None):
     if job is None:
         raise AutomationRejected("Job not found.")
     if actor is None:
-        if job.trigger_source != "remediation":
+        if job.trigger_source not in {"remediation", "auto"}:
             raise AutomationRejected("Not allowed.")
     elif getattr(actor, "role", None) not in {"operator", "admin"}:
         abort(403)
     if job.status != "queued":
         raise AutomationRejected("Job is not queued.")
+
+    server = None
 
     def _fail(message):
         now = utcnow()
@@ -131,7 +170,7 @@ def dispatch(job_id, actor=None):
             "job.result",
             "automation_job",
             job.id,
-            {"status": job.status, "exit_code": job.exit_code, "alert_id": job.alert_id},
+            _job_audit(job, server, "FAILED", message),
             user_id=getattr(actor, "id", None),
         )
         return job
@@ -153,19 +192,14 @@ def dispatch(job_id, actor=None):
             "remediation.blocked",
             "automation_job",
             job.id,
-            {
-                "action_key": job.action_key,
-                "alert_id": job.alert_id,
-                "server_id": job.server_id,
-                "reason": refusal["reason"],
-            },
+            _job_audit(job, server, "BLOCKED", refusal["reason"], status="blocked"),
             user_id=getattr(actor, "id", None),
         )
         record(
             "job.result",
             "automation_job",
             job.id,
-            {"status": "blocked", "exit_code": None, "alert_id": job.alert_id},
+            _job_audit(job, server, "BLOCKED", refusal["reason"], status="blocked"),
             user_id=getattr(actor, "id", None),
         )
         return job
@@ -193,12 +227,22 @@ def dispatch(job_id, actor=None):
     job.output_excerpt = scrub_output(result.output, limit)
     job.stderr_excerpt = scrub_output(getattr(result, "stderr", "") or "", limit)
     job.finished_at = result.finished_at or utcnow()
+    execution_result = "FAILED"
     if not result.success:
+        stage, task_name = playbook_failure_stage(result.output, getattr(result, "stderr", "") or "")
         job.status = "failed"
-        job.verification_result = "skipped"
-        job.verification_detail = "Playbook failed before verification."
+        if stage == "verification_failed":
+            execution_result = "SUCCESS"
+            job.verification_result = "failed"
+            job.verification_detail = (
+                f"Remediation task succeeded, but verification task '{task_name}' failed."
+            )
+        else:
+            job.verification_result = "skipped"
+            job.verification_detail = "Playbook failed before verification."
         audit_action = "remediation.failed"
     else:
+        execution_result = "SUCCESS"
         try:
             verified, detail = verify_recovery(server, job.action_key)
         except Exception:
@@ -212,25 +256,63 @@ def dispatch(job_id, actor=None):
         else:
             job.status = "failed"
             job.verification_result = "failed"
-            audit_action = "remediation.failed"
+            audit_action = "remediation.verification_failed"
+    if job.verification_result == "failed":
+        reason, message = verification_notice(job.action_key)
+        job.verification_detail = reason
+        audit_action = "remediation.verification_failed"
+    else:
+        reason, message = None, None
     db.session.commit()
+    if job.verification_result == "passed":
+        outcome = "SUCCESS"
+    elif job.verification_result == "failed":
+        outcome = "VERIFICATION_FAILED"
+    else:
+        outcome = "FAILED"
+    if job.verification_result == "failed" and execution_result == "SUCCESS":
+        record(
+            "remediation.execution_succeeded",
+            "automation_job",
+            job.id,
+            _job_audit(
+                job,
+                server,
+                "SUCCESS",
+                "remediation execution succeeded",
+                message="Remediation execution succeeded. The remediation command completed successfully.",
+                execution_result="SUCCESS",
+            ),
+            user_id=getattr(actor, "id", None),
+        )
     record(
         audit_action,
         "automation_job",
         job.id,
-        {
-            "status": job.verification_result,
-            "exit_code": job.exit_code,
-            "alert_id": job.alert_id,
-            "detail": job.verification_detail,
-        },
+        _job_audit(
+            job,
+            server,
+            outcome,
+            "verification failed after remediation" if job.verification_result == "failed" else (job.verification_detail or outcome),
+            status=job.verification_result,
+            detail=job.verification_detail,
+            execution_result=execution_result,
+            message=message if job.verification_result == "failed" else (job.verification_detail or outcome),
+        ),
         user_id=getattr(actor, "id", None),
     )
     record(
         "job.result",
         "automation_job",
         job.id,
-        {"status": job.status, "exit_code": job.exit_code, "alert_id": job.alert_id},
+        _job_audit(
+            job,
+            server,
+            outcome,
+            job.verification_detail or outcome,
+            status=job.status,
+            execution_result=execution_result,
+        ),
         user_id=getattr(actor, "id", None),
     )
     return job
@@ -281,6 +363,6 @@ def retry_job(job_id, actor):
         parameters=parameters,
         actor=actor,
         alert_id=old.alert_id,
-        trigger_source=old.trigger_source,
+        trigger_source="manual",
         retry_of_job_id=old.id,
     )

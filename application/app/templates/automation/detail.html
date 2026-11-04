@@ -7,12 +7,13 @@
 </div>
 <div class="card mb-4"><div class="card-body">
   <dl class="row mb-0">
-    <dt class="col-sm-3">Server</dt>
+    <dt class="col-sm-3">Target</dt>
     <dd class="col-sm-9">{% if job.server %}<a href="{{ url_for('servers.detail', server_id=job.server.id) }}">{{ job.server.name }}</a> <span class="text-secondary">{{ job.server.ip_address }}</span>{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Action</dt><dd class="col-sm-9"><code>{{ job.action_key }}</code></dd>
+    <dt class="col-sm-3">Risk</dt><dd class="col-sm-9">{{ action_risk(job.action_key)|upper }}</dd>
     <dt class="col-sm-3">Trigger</dt>
     <dd class="col-sm-9">
-      <span class="badge text-bg-{{ badge_class(job.trigger_source) }}">{{ job.trigger_source }}</span>
+      <span class="badge text-bg-{{ badge_class(trigger_label(job)) }}">{{ trigger_label(job) }}</span>
       {% if job.alert %}
         from alert <a href="{{ url_for('alerts.index') }}#alert-{{ job.alert.id }}">{{ job.alert.alert_name }} #{{ job.alert.id }}</a>
         <span class="badge text-bg-{{ badge_class(job.alert.status) }}">{{ job.alert.status }}</span>
@@ -21,13 +22,30 @@
         · retry of <a href="{{ url_for('automation.detail', job_id=job.retry_of_job_id) }}">job {{ job.retry_of_job_id }}</a>
       {% endif %}
     </dd>
-    <dt class="col-sm-3">Result</dt>
+    <dt class="col-sm-3">Alert ID</dt>
+    <dd class="col-sm-9">{% if job.alert_id %}{{ job.alert_id }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Incident</dt>
+    <dd class="col-sm-9">{% if job.incident_id %}{{ job.incident_id }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Attempt</dt>
+    <dd class="col-sm-9">{% if job.attempt %}{{ job.attempt }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Reason</dt>
+    <dd class="col-sm-9">{% if job_outcome_label(job) == 'VERIFICATION_FAILED' and job.verification_detail %}{{ job.verification_detail }}{% elif job.reason %}{{ job.reason }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Retry count</dt>
+    <dd class="col-sm-9">{{ auto.retry_count }} of {{ config.AUTO_REMEDIATION_MAX_RETRIES }}</dd>
+    {% if auto.cooldown %}
+      <dt class="col-sm-3">Cooldown</dt><dd class="col-sm-9">{{ auto.cooldown }}</dd>
+    {% endif %}
+    {% if auto.intervention %}
+      <dt class="col-sm-3">Next step</dt><dd class="col-sm-9">{{ auto.intervention }}</dd>
+    {% endif %}
+    <dt class="col-sm-3">Final status</dt>
     <dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ job_outcome_label(job) }}</span></dd>
     <dt class="col-sm-3">Started</dt><dd class="col-sm-9">{{ job.started_at | dt }}</dd>
     <dt class="col-sm-3">Finished</dt><dd class="col-sm-9">{{ job.finished_at | dt }}</dd>
     <dt class="col-sm-3">Duration</dt>
     <dd class="col-sm-9">{% set seconds = job_duration_seconds(job) %}{% if seconds is not none %}{{ seconds }}s{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Exit code</dt><dd class="col-sm-9">{% if job.exit_code is not none %}{{ job.exit_code }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Execution</dt><dd class="col-sm-9">{{ execution_result_label(job) }}</dd>
     <dt class="col-sm-3">Verification</dt>
     <dd class="col-sm-9">
       {% if verification_label(job) %}
@@ -68,16 +86,20 @@
 <h2 class="h5">Audit events</h2>
 <div class="table-responsive card">
   <table class="table mb-0">
-    <thead><tr><th>When</th><th>Action</th><th>Details</th></tr></thead>
+    <thead><tr><th>When</th><th>Target</th><th>Action</th><th>Trigger</th><th>Result</th><th>Reason</th></tr></thead>
     <tbody>
       {% for entry in audits %}
+        {% set facts = audit_facts(entry) %}
         <tr>
           <td>{{ entry.created_at | dt }}</td>
-          <td><code>{{ entry.action }}</code></td>
-          <td><pre class="output small mb-0">{{ entry.details_json or '—' }}</pre></td>
+          <td>{{ facts.target }}</td>
+          <td><code>{{ facts.action }}</code></td>
+          <td>{{ facts.trigger }}</td>
+          <td>{{ facts.result }}</td>
+          <td>{{ facts.reason }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="3" class="text-secondary">No audit events for this job.</td></tr>
+        <tr><td colspan="6" class="text-secondary">No audit events for this job.</td></tr>
       {% endfor %}
     </tbody>
   </table>

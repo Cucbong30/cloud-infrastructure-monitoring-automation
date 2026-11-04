@@ -58,7 +58,7 @@ def ingest_alertmanager_payload(payload):
                 alert.id,
                 {"fingerprint": alert.fingerprint, "alert_name": alert.alert_name, "status": "firing"},
             )
-        if opened and alert is not None:
+        if alert is not None and alert.status == "firing":
             job = maybe_remediate(alert)
             if job is not None:
                 remediated += 1
