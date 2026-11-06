@@ -24,7 +24,8 @@ def _apply_form(server, form):
     server.name = form.name.data.strip()
     server.hostname = form.hostname.data.strip()
     server.ip_address = form.ip_address.data.strip()
-    server.environment = form.environment.data.strip()
+    server.environment = form.environment.data
+    server.provider = form.provider.data
     server.os_type = form.os_type.data
     server.status = form.status.data
     server.monitoring_target = blank_to_none(form.monitoring_target.data)

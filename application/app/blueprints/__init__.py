@@ -4,6 +4,7 @@ from app.blueprints.auth import bp as auth_bp
 from app.blueprints.automation import bp as automation_bp
 from app.blueprints.dashboard import bp as dashboard_bp
 from app.blueprints.servers import bp as servers_bp
+from app.blueprints.users import bp as users_bp
 from app.blueprints.webhooks import bp as webhooks_bp
 
 
@@ -14,4 +15,5 @@ def register_blueprints(app):
     app.register_blueprint(alerts_bp)
     app.register_blueprint(automation_bp)
     app.register_blueprint(audit_bp)
+    app.register_blueprint(users_bp)
     app.register_blueprint(webhooks_bp)

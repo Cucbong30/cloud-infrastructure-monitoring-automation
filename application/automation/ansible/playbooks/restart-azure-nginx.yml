@@ -1,0 +1,29 @@
+---
+# Same task split as restart-nginx.yml. Restart can fail. The port 80 check cannot.
+- name: Recover Nginx on AZURE01
+  hosts: AZURE01
+  gather_facts: false
+
+  tasks:
+    - name: Restart nginx service
+      ansible.builtin.command:
+        cmd: sudo -n systemctl restart nginx
+      changed_when: true
+
+    - name: Wait for nginx port 80
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 80
+        state: started
+        timeout: 15
+      delegate_to: localhost
+      become: false
+
+    - name: Verify nginx HTTP response
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}/"
+        method: GET
+        status_code: 200
+        return_content: false
+      delegate_to: localhost
+      become: false

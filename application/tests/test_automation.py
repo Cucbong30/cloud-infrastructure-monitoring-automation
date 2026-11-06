@@ -203,6 +203,12 @@ changed: [win01]
 TASK [Wait for Windows Exporter port 9182] ***
 fatal: [win01]: FAILED! => {"msg": "Timeout"}
 """,
+        """TASK [Restart nginx service] ***
+changed: [AZURE01]
+
+TASK [Wait for nginx port 80] ***
+fatal: [AZURE01 -> localhost]: FAILED! => {"msg": "Timeout when waiting for 20.243.24.91:80"}
+""",
     )
     for text in samples:
         stage, task_name = playbook_failure_stage(text)
@@ -227,6 +233,13 @@ fatal: [win01]: FAILED! => {"msg": "Could not restart service"}
 """
     )
     assert stage == "execution_failed"
+    stage, task_name = playbook_failure_stage(
+        """TASK [Restart nginx service] ***
+fatal: [AZURE01]: FAILED! => {"msg": "nginx: configuration file /etc/nginx/nginx.conf test failed"}
+"""
+    )
+    assert stage == "execution_failed"
+    assert task_name == "Restart nginx service"
 
 
 def test_ansible_failure_and_executor_crash_stay_on_the_job(seeded, monkeypatch):

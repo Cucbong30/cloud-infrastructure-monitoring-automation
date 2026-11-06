@@ -78,4 +78,37 @@ def build_config():
         "PROBE_TIMEOUT_SECONDS": _float("PROBE_TIMEOUT_SECONDS", 2),
         "JOB_OUTPUT_MAX_CHARS": _int("JOB_OUTPUT_MAX_CHARS", 4000),
         "DEMO_USER_PASSWORD": os.environ.get("DEMO_USER_PASSWORD", ""),
+        "ENTRA_TENANT_ID": (os.environ.get("ENTRA_TENANT_ID") or "").strip(),
+        "ENTRA_CLIENT_ID": (os.environ.get("ENTRA_CLIENT_ID") or "").strip(),
+        "ENTRA_CLIENT_SECRET": (os.environ.get("ENTRA_CLIENT_SECRET") or "").strip(),
+        "ENTRA_REDIRECT_URI": (
+            os.environ.get("ENTRA_REDIRECT_URI") or "http://localhost:5000/auth/callback"
+        ).strip(),
+        "SMTP_HOST": (os.environ.get("SMTP_HOST") or "smtp.office365.com").strip(),
+        "SMTP_PORT": _int("SMTP_PORT", 587),
+        "SMTP_USER": (os.environ.get("SMTP_USER") or "").strip(),
+        "SMTP_PASSWORD": os.environ.get("SMTP_PASSWORD") or "",
+        "SMTP_FROM": (os.environ.get("SMTP_FROM") or os.environ.get("SMTP_USER") or "").strip(),
+        "NOTIFY_RECIPIENTS": (
+            os.environ.get("ALERT_RECIPIENTS") or os.environ.get("NOTIFY_RECIPIENTS") or ""
+        ).strip(),
+        "ALERT_RECIPIENTS": (
+            os.environ.get("ALERT_RECIPIENTS") or os.environ.get("NOTIFY_RECIPIENTS") or ""
+        ).strip(),
+        "ALERT_RECIPIENT_CRITICAL": (os.environ.get("ALERT_RECIPIENT_CRITICAL") or "").strip(),
+        "ALERT_RECIPIENT_WARNING": (os.environ.get("ALERT_RECIPIENT_WARNING") or "").strip(),
+        "ALERT_RECIPIENT_INFO": (os.environ.get("ALERT_RECIPIENT_INFO") or "").strip(),
+        "NOTIFY_ENABLED": _bool("NOTIFY_ENABLED", False),
+        "GRAPH_SENDER_MAILBOX": (
+            os.environ.get("GRAPH_SENDER_MAILBOX") or os.environ.get("GRAPH_MAIL_SENDER") or ""
+        ).strip(),
+        "GRAPH_MAIL_SENDER": (
+            os.environ.get("GRAPH_SENDER_MAILBOX") or os.environ.get("GRAPH_MAIL_SENDER") or ""
+        ).strip(),
+        "AZURE01_IP": (os.environ.get("AZURE01_IP") or "").strip(),
+        "AZURE01_EXPORTER": (os.environ.get("AZURE01_EXPORTER") or "").strip(),
+        "AZURE01_NGINX_URL": (os.environ.get("AZURE01_NGINX_URL") or "").strip(),
+        "AZURE01_PLAYBOOK": (
+            os.environ.get("AZURE01_PLAYBOOK") or "~/ansible/playbooks/restart-azure-nginx.yml"
+        ).strip(),
     }

@@ -71,7 +71,8 @@
             <tr class="host-row {% if host.status == 'Unreachable' %}is-down{% elif host.status == 'Degraded' %}is-degraded{% endif %}" data-host="{{ host.name }}">
               <td>
                 <a href="{{ host.href }}">{{ host.name }}</a>
-                <div class="text-secondary small">{{ host.role }}</div>
+                <div class="text-secondary small">{{ host.role }}{% if host.environment %} · {{ host.environment }} · {{ host.provider }}{% endif %}</div>
+                {% if host.note %}<div class="text-secondary small">{{ host.note }}</div>{% endif %}
               </td>
               <td>{{ host.ip }}</td>
               <td>{{ pill(host.status) }}{% if host.maintenance %} <span class="pill pill-maintenance">Maintenance</span>{% endif %}</td>
@@ -101,7 +102,7 @@
             {{ pill(alert.severity) }}
           </div>
         {% else %}
-          <p class="text-secondary mb-0">No firing alerts on WEB01, APP01, WIN01, or MON01.</p>
+          <p class="text-secondary mb-0">No firing alerts on WEB01, APP01, WIN01, AZURE01, or MON01.</p>
         {% endfor %}
       </div>
     </div>

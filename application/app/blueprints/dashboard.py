@@ -341,7 +341,9 @@ def _audit_event(row):
     }
     reason = data.get("reason")
     title = titles.get(row.action, row.action)
-    if reason and reason not in title.lower():
+    if data.get("result") == "DUPLICATE_SKIPPED":
+        title = "Skipped because duplicate job already exists"
+    if reason and str(reason).lower() not in title.lower():
         title = f"{title}: {reason}"
     message = data.get("message") or audit_message(row)
     if message == row.details_json:

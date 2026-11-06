@@ -93,6 +93,7 @@ def test_queued_action_blocks_a_duplicate_auto_job(seeded):
         skipped = db.session.scalar(
             select(AuditLog).where(AuditLog.action == "auto_remediation.skipped", AuditLog.resource_id == str(alert.id))
         )
+        assert "Skipped because duplicate job already exists" in skipped.details_json
         assert "already queued or running" in skipped.details_json
 
 
@@ -447,12 +448,15 @@ _TARGETS = (
     ("NginxDown", "192.168.10.11:9100", "restart_nginx", "WEB01"),
     ("service_down", "192.168.10.12:9100", "restart_container", "APP01"),
     ("WindowsExporterDown", "192.168.10.13:9182", "restart_windows_exporter", "WIN01"),
+    ("NginxDown", "AZURE01:9100", "restart_nginx", "AZURE01"),
 )
 
 
 def test_production_playbooks_stay_on_the_lab_targets():
-    from app.executors.actions import ACTIONS
+    from app.executors.actions import ACTIONS, playbook_for
 
+    assert playbook_for("WEB01", "restart_nginx") == "~/ansible/playbooks/restart-nginx.yml"
+    assert playbook_for("AZURE01", "restart_nginx") == "~/ansible/playbooks/restart-azure-nginx.yml"
     assert ACTIONS["restart_nginx"].playbook == "~/ansible/playbooks/restart-nginx.yml"
     assert ACTIONS["restart_container"].playbook == "~/ansible/playbooks/restart-app-container.yml"
     assert ACTIONS["restart_windows_exporter"].playbook == "~/ansible/playbooks/restart-windows-exporter.yml"
@@ -464,12 +468,16 @@ def test_production_playbooks_stay_on_the_lab_targets():
 def test_each_target_auto_success_records_the_audit(seeded):
     from app.presentation import job_outcome_label
 
+    from app.services.inventory_sync import sync_inventory
+
     _enable(seeded)
     with seeded.app_context():
+        sync_inventory()
         for name, instance, action, host in _TARGETS:
             sync_alerts(FakePrometheus([_alert(name, f"fp-ok-{host}", instance)]))
             alert = db.session.scalar(select(Alert).where(Alert.fingerprint == f"fp-ok-{host}"))
             job = db.session.scalar(select(AutomationJob).where(AutomationJob.alert_id == alert.id))
+            assert job is not None, (host, None if alert is None else alert.server_id, None if alert is None else alert.alert_name)
             assert job.action_key == action
             assert job.trigger_source == "auto"
             assert job_outcome_label(job) == "SUCCESS"
@@ -489,6 +497,7 @@ def test_each_target_execution_failure_ends_manual(seeded, monkeypatch):
     from app.executors.base import ExecutionResult
     from app.models import utcnow
     from app.presentation import job_outcome_label
+    from app.services.inventory_sync import sync_inventory
 
     _enable(seeded)
 
@@ -498,6 +507,7 @@ def test_each_target_execution_failure_ends_manual(seeded, monkeypatch):
 
     monkeypatch.setattr("app.executors.mock.MockExecutor.execute", fail)
     with seeded.app_context():
+        sync_inventory()
         for name, instance, action, host in _TARGETS:
             sync_alerts(FakePrometheus([_alert(name, f"fp-exec-{host}", instance)]))
             alert = db.session.scalar(select(Alert).where(Alert.fingerprint == f"fp-exec-{host}"))
@@ -563,9 +573,12 @@ def test_each_target_blocks_before_the_playbook(seeded):
 def test_each_target_verification_failure_does_not_retry(seeded):
     from app.presentation import job_outcome_label
 
+    from app.services.inventory_sync import sync_inventory
+
     _enable(seeded)
     seeded.config["RECOVERY_CHECK"] = lambda server, action: (False, "post-check did not match the service port")
     with seeded.app_context():
+        sync_inventory()
         for name, instance, action, host in _TARGETS:
             sync_alerts(FakePrometheus([_alert(name, f"fp-ver-{host}", instance)]))
             alert = db.session.scalar(select(Alert).where(Alert.fingerprint == f"fp-ver-{host}"))
@@ -605,6 +618,8 @@ def test_each_target_verification_failure_does_not_retry(seeded):
             assert f'"target": "{host}"' in failed.details_json
             if host == "WIN01":
                 assert "post-check on port 9182 failed" in failed.details_json
+            if host == "AZURE01":
+                assert "post-check on port 80 failed" in failed.details_json
 
 
 def test_successful_start_and_failed_wait_does_not_retry(seeded, monkeypatch):
@@ -704,3 +719,42 @@ def test_host_drawer_does_not_mix_another_servers_retry_limit(seeded, client):
     )
     assert "restart_nginx" not in app_text
     assert "restart_nginx" in web_text
+
+
+def test_azure_nginx_down_runs_when_web01_nginx_is_up(seeded, monkeypatch):
+    """The up-check follows the server, so a healthy WEB01 does not hide AZURE01."""
+    from app.executors.base import ExecutionResult
+    from app.models import utcnow
+
+    _enable(seeded)
+    seeded.config["AUTOMATION_EXECUTOR"] = "ansible"
+    seeded.config["MANAGEMENT_CHECK"] = lambda server: None
+    seeded.config["AZURE01_IP"] = "20.243.24.91"
+    seeded.config["AZURE01_NGINX_URL"] = "http://20.243.24.91/"
+    seen = {}
+
+    def web_is_up(url, timeout=2):
+        return "192.168.10.11" in url, 4
+
+    def azure_recovers(url, timeout=3):
+        return "20.243.24.91" in url, 12
+
+    def fake_run(**kwargs):
+        seen.update(kwargs)
+        return ExecutionResult(True, 0, "ok", utcnow(), utcnow())
+
+    monkeypatch.setattr("app.services.probes.http_probe", web_is_up)
+    monkeypatch.setattr("app.services.checks.http_probe", azure_recovers)
+    monkeypatch.setattr("app.executors.ansible.run_controller_playbook", fake_run)
+    with seeded.app_context():
+        server = db.session.scalar(select(Server).where(Server.name == "AZURE01"))
+        server.ip_address = "20.243.24.91"
+        db.session.commit()
+        sync_alerts(FakePrometheus([_alert("NginxDown", "fp-azure-not-web", "AZURE01:9100")]))
+        alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-azure-not-web"))
+        job = db.session.scalar(select(AutomationJob).where(AutomationJob.alert_id == alert.id))
+        assert alert.server_id == server.id
+        assert job.action_key == "restart_nginx"
+        assert job.final_status == "SUCCESS"
+        assert job.verification_result == "passed"
+        assert seen["playbook"] == "~/ansible/playbooks/restart-azure-nginx.yml"

@@ -31,20 +31,21 @@
 <div class="table-responsive card">
   <table class="table mb-0 align-middle">
     <thead>
-      <tr><th>Name</th><th>Address</th><th>Environment</th><th>OS</th><th>Status</th><th>Active</th></tr>
+      <tr><th>Name</th><th>Address</th><th>Environment</th><th>Provider</th><th>OS</th><th>Status</th><th>Active</th></tr>
     </thead>
     <tbody>
       {% for server in servers %}
         <tr>
           <td><a href="{{ url_for('servers.detail', server_id=server.id) }}">{{ server.name }}</a></td>
           <td>{{ server.ip_address }}</td>
-          <td>{{ server.environment }}</td>
+          <td>{{ {'local': 'Local', 'cloud': 'Cloud'}.get(server.environment, server.environment) }}</td>
+          <td>{{ {'vmware': 'VMware', 'azure': 'Azure'}.get(server.provider, server.provider) }}</td>
           <td><span class="badge text-bg-{{ badge_class(server.os_type) }}">{{ server.os_type }}</span></td>
           <td><span class="badge text-bg-{{ badge_class(server.status) }}">{{ server.status }}</span></td>
           <td>{{ 'yes' if server.is_active else 'no' }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="6" class="text-secondary">No servers match this filter.</td></tr>
+        <tr><td colspan="7" class="text-secondary">No servers match this filter.</td></tr>
       {% endfor %}
     </tbody>
   </table>

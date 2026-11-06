@@ -17,6 +17,20 @@ ACTION_CHANNELS = {
 }
 
 
+def management_channels():
+    channels = dict(MANAGEMENT_CHANNELS)
+    from app.services.inventory import azure_settings
+
+    settings = azure_settings()
+    channels["AZURE01"] = {
+        "label": "SSH",
+        "host": settings["ip"] if settings["configured"] else "",
+        "port": 22,
+        "configured": settings["configured"],
+    }
+    return channels
+
+
 def _refusal(name, status):
     reason = f"{name} management channel {status['label']} :{status['port']} is down"
     message = f"Remediation unavailable. {reason}."
@@ -60,9 +74,18 @@ def _management_probe():
 
 
 def probe_management(name, probe_tcp=None, timeout=2):
-    spec = MANAGEMENT_CHANNELS.get((name or "").upper())
+    spec = management_channels().get((name or "").upper())
     if spec is None:
         return None
+    if spec.get("configured") is False or not spec.get("host"):
+        return {
+            "label": spec["label"],
+            "status": "DOWN",
+            "text": f"{spec['label']} not configured",
+            "host": spec.get("host") or "",
+            "port": spec["port"],
+            "latency_ms": None,
+        }
     probe = _management_probe() if probe_tcp is None else probe_tcp
     result = probe(spec["host"], spec["port"], timeout=timeout)
     if isinstance(result, tuple):
@@ -89,7 +112,7 @@ def management_status(server):
     if override is not None:
         return override(server)
     name = (getattr(server, "name", None) or "").upper()
-    if name not in MANAGEMENT_CHANNELS:
+    if name not in management_channels():
         return None
     if current_app.config.get("AUTOMATION_EXECUTOR") != "ansible":
         return None
@@ -105,9 +128,12 @@ def management_status(server):
 
 
 def channel_name(server, action_key=None):
+    server_name = (getattr(server, "name", None) or "").upper()
+    if server_name in management_channels():
+        return server_name
     if action_key in ACTION_CHANNELS:
         return ACTION_CHANNELS[action_key]
-    return (getattr(server, "name", None) or "").upper()
+    return server_name
 
 
 def channel_probe(server, action_key=None):
@@ -115,7 +141,7 @@ def channel_probe(server, action_key=None):
     if current_app.config.get("MANAGEMENT_STATUS") is not None and action_key not in ACTION_CHANNELS:
         return management_status(server)
     name = channel_name(server, action_key)
-    if name not in MANAGEMENT_CHANNELS:
+    if name not in management_channels():
         return None
     if current_app.config.get("AUTOMATION_EXECUTOR") != "ansible":
         return None
@@ -179,6 +205,18 @@ def refuse_unreachable_management(server, *, action_key, actor=None, alert_id=No
     return management_block(server)
 
 
+def service_probe(server, action_key):
+    name = (getattr(server, "name", None) or "").upper()
+    if name == "AZURE01" and action_key == "restart_nginx":
+        from app.services.inventory import azure_settings
+
+        settings = azure_settings()
+        if not settings["nginx_url"]:
+            return None
+        return ("http", settings["nginx_url"], "Nginx :80")
+    return SERVICE_CHECKS.get(action_key)
+
+
 def verify_recovery(server, action_key):
     """Return (ok, detail). Success requires this post-check, not only exit code 0."""
     checker = current_app.config.get("RECOVERY_CHECK")
@@ -186,7 +224,7 @@ def verify_recovery(server, action_key):
         return checker(server, action_key)
     if current_app.config.get("AUTOMATION_EXECUTOR") != "ansible":
         return True, "Mock post-check passed."
-    spec = SERVICE_CHECKS.get(action_key)
+    spec = service_probe(server, action_key)
     if spec is None:
         return False, "No post-check is defined for this action."
     kind, target, label = spec
