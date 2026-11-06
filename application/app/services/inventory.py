@@ -1,3 +1,5 @@
+import os
+
 from sqlalchemy import select
 
 from app.models import Server
@@ -8,7 +10,8 @@ LAB_TARGETS = {
         "ip_address": "192.168.10.11",
         "os_type": "linux",
         "monitoring_target": "192.168.10.11:9100",
-        "environment": "prod",
+        "environment": "local",
+        "provider": "vmware",
         "automation_group": "linux_web",
     },
     "APP01": {
@@ -16,7 +19,8 @@ LAB_TARGETS = {
         "ip_address": "192.168.10.12",
         "os_type": "linux",
         "monitoring_target": "192.168.10.12:9100",
-        "environment": "prod",
+        "environment": "local",
+        "provider": "vmware",
         "automation_group": "linux_app",
     },
     "WIN01": {
@@ -24,7 +28,8 @@ LAB_TARGETS = {
         "ip_address": "192.168.10.13",
         "os_type": "windows",
         "monitoring_target": "192.168.10.13:9182",
-        "environment": "prod",
+        "environment": "local",
+        "provider": "vmware",
         "automation_group": "windows_app",
     },
     "MON01": {
@@ -32,8 +37,18 @@ LAB_TARGETS = {
         "ip_address": "192.168.10.10",
         "os_type": "linux",
         "monitoring_target": "192.168.10.10:9100",
-        "environment": "prod",
+        "environment": "local",
+        "provider": "vmware",
         "automation_group": "linux_mon",
+    },
+    "AZURE01": {
+        "hostname": "AZURE01",
+        "ip_address": "0.0.0.0",
+        "os_type": "linux",
+        "monitoring_target": "AZURE01:9100",
+        "environment": "cloud",
+        "provider": "azure",
+        "automation_group": "azure_linux",
     },
 }
 
@@ -53,7 +68,68 @@ INSTANCE_ALIASES = {
     "192.168.10.10:9090": "MON01",
     "192.168.10.10": "MON01",
     "mon01": "MON01",
+    "azure01": "AZURE01",
+    "AZURE01": "AZURE01",
+    "AZURE01:9100": "AZURE01",
 }
+
+
+def _setting(name, default=""):
+    try:
+        from flask import current_app, has_app_context
+
+        if has_app_context():
+            value = current_app.config.get(name)
+            if value is not None and str(value).strip() != "":
+                return str(value).strip()
+    except RuntimeError:
+        pass
+    return (os.environ.get(name) or default).strip()
+
+
+def azure_settings():
+    """Cloud target address. Empty until AZURE01_IP is set, so the portal does not probe a guessed host."""
+    ip = _setting("AZURE01_IP")
+    exporter = _setting("AZURE01_EXPORTER") or (f"{ip}:9100" if ip else "AZURE01:9100")
+    nginx = _setting("AZURE01_NGINX_URL") or (f"http://{ip}/" if ip else "")
+    playbook = _setting("AZURE01_PLAYBOOK", "~/ansible/playbooks/restart-azure-nginx.yml")
+    return {
+        "ip": ip or "0.0.0.0",
+        "configured": bool(ip),
+        "exporter": exporter,
+        "nginx_url": nginx,
+        "playbook": playbook,
+    }
+
+
+def refresh_cloud_target():
+    settings = azure_settings()
+    LAB_TARGETS["AZURE01"] = {
+        "hostname": "AZURE01",
+        "ip_address": settings["ip"],
+        "os_type": "linux",
+        "monitoring_target": settings["exporter"],
+        "environment": "cloud",
+        "provider": "azure",
+        "automation_group": "azure_linux",
+    }
+    for key in (settings["ip"], settings["exporter"], "azure01", "AZURE01"):
+        if key and key != "0.0.0.0":
+            INSTANCE_ALIASES[key] = "AZURE01"
+    INSTANCE_ALIASES["azure01"] = "AZURE01"
+    INSTANCE_ALIASES["AZURE01"] = "AZURE01"
+    INSTANCE_ALIASES["AZURE01:9100"] = "AZURE01"
+    from app.services.metrics import HOST_CHECKS
+
+    HOST_CHECKS["AZURE01"] = {
+        "role": "Cloud Web Server",
+        "exporter_label": "Node Exporter :9100",
+        "exporter_short": "E",
+        "services": [
+            {"name": "Nginx :80", "short": "N", "kind": "http", "url": settings["nginx_url"]},
+        ],
+    }
+    return settings
 
 
 def instance_candidates(*values):
@@ -83,6 +159,7 @@ def canonical_server_name(instance):
 
 
 def match_server(*values, labels=None):
+    refresh_cloud_target()
     candidates = list(instance_candidates(*values))
     if labels:
         for key in ("instance", "monitoring_target", "hostname", "host", "ip", "job"):

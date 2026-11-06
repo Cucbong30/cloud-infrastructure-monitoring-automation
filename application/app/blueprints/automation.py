@@ -3,7 +3,7 @@ from flask_login import current_user
 from sqlalchemy import select
 
 from app.authz import roles_required
-from app.executors.actions import ACTIONS, LAB_TARGETS
+from app.executors.actions import ACTIONS, target_spec
 from app.extensions import db
 from app.forms import JobForm
 from app.models import AuditLog, AutomationJob, Server

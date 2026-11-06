@@ -175,6 +175,14 @@ def verification_summary(job):
     return VERIFICATION_SUMMARIES.get(getattr(job, "verification_result", None))
 
 
+def _trigger_token(value):
+    text = str(value or "").strip().lower()
+    labels = {"auto": "AUTO", "manual": "MANUAL", "system": "SYSTEM", "remediation": "MANUAL"}
+    if not text:
+        return "—"
+    return labels.get(text, text.upper())
+
+
 def audit_facts(entry):
     """Target, action, trigger, result, and reason stored on an audit row."""
     raw = getattr(entry, "details_json", None) or ""
@@ -188,8 +196,10 @@ def audit_facts(entry):
     return {
         "target": data.get("target") or "—",
         "action": data.get("action") or data.get("action_key") or getattr(entry, "action", "—"),
-        "trigger": data.get("trigger") or data.get("trigger_source") or "—",
+        "trigger": _trigger_token(data.get("trigger") or data.get("trigger_source")),
         "result": data.get("result") or "—",
+        "actor": data.get("actor") or (getattr(getattr(entry, "user", None), "username", None) or "SYSTEM"),
+        "role": data.get("role") or (getattr(getattr(entry, "user", None), "role", None) or "SYSTEM"),
         "reason": reason,
     }
 

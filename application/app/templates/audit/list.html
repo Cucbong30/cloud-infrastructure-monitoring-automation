@@ -6,14 +6,15 @@
 <div class="table-responsive card">
   <table class="table mb-0">
     <thead>
-      <tr><th>When</th><th>User</th><th>Target</th><th>Action</th><th>Trigger</th><th>Result</th><th>Reason</th></tr>
+      <tr><th>When</th><th>Actor</th><th>Role</th><th>Target</th><th>Action</th><th>Trigger</th><th>Result</th><th>Reason</th></tr>
     </thead>
     <tbody>
       {% for entry in entries %}
         <tr>
           {% set facts = audit_facts(entry) %}
           <td>{{ entry.created_at | dt }}</td>
-          <td>{{ entry.user.username if entry.user else '—' }}</td>
+          <td>{{ facts.actor }}</td>
+          <td>{{ facts.role }}</td>
           <td>{{ facts.target }}</td>
           <td><code>{{ facts.action }}</code></td>
           <td>{{ facts.trigger }}</td>
@@ -21,7 +22,7 @@
           <td>{{ facts.reason }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="7" class="text-secondary">No audit records.</td></tr>
+        <tr><td colspan="8" class="text-secondary">No audit records.</td></tr>
       {% endfor %}
     </tbody>
   </table>

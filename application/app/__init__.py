@@ -22,7 +22,15 @@ from app.presentation import (
     verification_summary,
 )
 
-PUBLIC_ENDPOINTS = {"healthz", "auth.login", "static", "index", "webhooks.alertmanager"}
+PUBLIC_ENDPOINTS = {
+    "healthz",
+    "auth.login",
+    "auth.microsoft",
+    "auth.callback",
+    "static",
+    "index",
+    "webhooks.alertmanager",
+}
 
 
 def create_app(test_config=None):
@@ -72,6 +80,19 @@ def create_app(test_config=None):
         if current_user.is_authenticated:
             return redirect(url_for("dashboard.index"))
         return redirect(url_for("auth.login"))
+
+    @app.before_request
+    def sync_lab_inventory():
+        if app.config.get("_INVENTORY_SYNCED"):
+            return None
+        app.config["_INVENTORY_SYNCED"] = True
+        try:
+            from app.services.inventory_sync import sync_inventory
+
+            sync_inventory()
+        except Exception:
+            db.session.rollback()
+        return None
 
     @app.before_request
     def require_login():

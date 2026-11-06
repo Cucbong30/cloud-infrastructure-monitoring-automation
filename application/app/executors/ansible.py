@@ -5,7 +5,7 @@ import time
 
 from flask import current_app
 
-from app.executors.actions import ACTIONS, LAB_TARGETS
+from app.executors.actions import ACTIONS, playbook_for, target_spec
 from app.executors.base import AutomationExecutor, ExecutionResult
 from app.models import utcnow
 from app.validation import TOKEN_RE
@@ -27,7 +27,7 @@ def controller_port_open(host, port, timeout=2):
         port = int(port)
     except (TypeError, ValueError):
         return False, None
-    if (host, port) not in _MANAGEMENT_PORTS:
+    if not _management_allowed(host, port):
         return False, None
     now = time.monotonic()
     cached = _PORT_CACHE.get((host, port))
@@ -123,12 +123,29 @@ def _is_verification_task(name):
     ) is not None
 
 
-def allowed_parameters(server, action_key, parameters):
-    spec = LAB_TARGETS.get(action_key)
-    if spec is None or server is None or not isinstance(parameters, dict):
+def _management_allowed(host, port):
+    if (host, port) in _MANAGEMENT_PORTS:
+        return True
+    try:
+        from flask import current_app, has_app_context
+
+        if has_app_context():
+            azure = (current_app.config.get("AZURE01_IP") or "").strip()
+            if azure and (host, port) == (azure, 22):
+                return True
+    except RuntimeError:
         return False
-    name, ip, required = spec
-    if getattr(server, "name", None) != name or getattr(server, "ip_address", None) != ip:
+    return False
+
+
+def allowed_parameters(server, action_key, parameters):
+    if server is None or not isinstance(parameters, dict):
+        return False
+    spec = target_spec(getattr(server, "name", None), action_key)
+    if spec is None:
+        return False
+    ip, required = spec
+    if getattr(server, "ip_address", None) != ip:
         return False
     return all(parameters.get(key) == value for key, value in required.items())
 
@@ -136,6 +153,15 @@ def allowed_parameters(server, action_key, parameters):
 def run_controller_playbook(*, user, host, key_file, playbook, timeout):
     started = utcnow()
     allowed = {item.playbook for item in ACTIONS.values()}
+    try:
+        from flask import current_app, has_app_context
+
+        if has_app_context():
+            extra = (current_app.config.get("AZURE01_PLAYBOOK") or "").strip()
+            if extra:
+                allowed.add(extra)
+    except RuntimeError:
+        pass
     if host != CONTROLLER_HOST or playbook not in allowed:
         return ExecutionResult(False, 1, "Playbook is not allow-listed.", started, utcnow())
     if not TOKEN_RE.fullmatch(user or ""):
@@ -189,14 +215,15 @@ class AnsibleRunnerExecutor(AutomationExecutor):
             parameters = json.loads(job.parameters_json or "{}")
             if not allowed_parameters(server, action_definition.key, parameters):
                 return ExecutionResult(False, 1, "Action is not allowed for this server.", started, utcnow())
-            if action_definition.playbook != ACTIONS[action_definition.key].playbook:
+            playbook = playbook_for(server.name, action_definition.key)
+            if playbook is None:
                 return ExecutionResult(False, 1, "Playbook is not allow-listed.", started, utcnow())
             config = current_app.config
             return run_controller_playbook(
                 user=(config.get("ANSIBLE_CONTROLLER_USER") or "").strip(),
                 host=(config.get("ANSIBLE_CONTROLLER_HOST") or CONTROLLER_HOST).strip(),
                 key_file=(config.get("ANSIBLE_CONTROLLER_KEY") or "").strip(),
-                playbook=action_definition.playbook,
+                playbook=playbook,
                 timeout=int(config.get("ANSIBLE_TIMEOUT_SECONDS") or 90),
             )
         except Exception:

@@ -6,7 +6,12 @@
     <div class="card shadow-sm">
       <div class="card-body p-4">
         <h1 class="h3 mb-3">Operations Portal</h1>
-        <p class="text-secondary">Sign in to view inventory, alerts, and automation history.</p>
+        <p class="text-secondary">Sign in with a Microsoft account from the E5 Developer tenant.</p>
+        {% if sso_enabled %}
+          <a class="btn btn-primary w-100 mb-3" href="{{ url_for('auth.microsoft', next=request.args.get('next')) }}">Sign in with Microsoft</a>
+          <details class="mb-2">
+            <summary class="text-secondary">Lab account</summary>
+        {% endif %}
         <form method="post" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
           {{ form.hidden_tag() }}
           <div class="mb-3">
@@ -17,8 +22,13 @@
             {{ form.password.label(class="form-label") }}
             {{ form.password(class="form-control") }}
           </div>
-          {{ form.submit(class="btn btn-primary w-100") }}
+          {{ form.submit(class="btn btn-outline-primary w-100" if sso_enabled else "btn btn-primary w-100") }}
         </form>
+        {% if sso_enabled %}
+          </details>
+        {% else %}
+          <p class="text-secondary small mt-3 mb-0">Microsoft sign-in is not configured yet. Add the Entra app values, then this button becomes the primary login.</p>
+        {% endif %}
       </div>
     </div>
   </div>

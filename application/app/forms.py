@@ -12,6 +12,8 @@ from app.validation import (
 )
 
 OS_CHOICES = [("linux", "Linux"), ("windows", "Windows")]
+ENVIRONMENT_CHOICES = [("local", "Local"), ("cloud", "Cloud"), ("prod", "prod"), ("staging", "staging")]
+PROVIDER_CHOICES = [("vmware", "VMware"), ("azure", "Azure")]
 STATUS_CHOICES = [
     ("online", "Online"),
     ("warning", "Warning"),

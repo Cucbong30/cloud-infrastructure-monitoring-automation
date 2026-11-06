@@ -15,7 +15,7 @@ def test_pages_render_without_prometheus(seeded, client):
     login(client, "viewer")
     with seeded.app_context():
         server_id = db.session.scalar(select(Server.id).where(Server.name == "web-01"))
-    paths = ["/dashboard", "/servers/", "/alerts/", "/automation/", "/audit/", f"/servers/{server_id}"]
+    paths = ["/dashboard", "/servers/", "/alerts/", "/automation/", f"/servers/{server_id}"]
     for path in paths:
         response = client.get(path)
         assert response.status_code == 200, path

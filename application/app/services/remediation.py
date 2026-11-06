@@ -18,6 +18,7 @@ LAB_ACTIONS = {
     "WEB01": ("restart_nginx", {}, "Restart Nginx"),
     "APP01": ("restart_container", {"container_name": "app01-web"}, "Restart container"),
     "WIN01": ("restart_windows_exporter", {"service_name": "windows_exporter"}, "Restart Windows Exporter"),
+    "AZURE01": ("restart_nginx", {}, "Restart Nginx"),
 }
 _AUTO_LOCK = threading.Lock()
 _AUTO_RUNNING = set()
@@ -27,6 +28,7 @@ ALERTS_FOR = {
     "WEB01": {"service_down", "InstanceDown", "NginxDown"},
     "APP01": {"container_down", "service_down"},
     "WIN01": {"service_down", "InstanceDown", "WindowsExporterDown"},
+    "AZURE01": {"service_down", "InstanceDown", "NginxDown", "AzureNginxDown", "nginx_down"},
 }
 
 _DIAGNOSTIC_TOKENS = {"cpu", "memory", "ram", "disk", "latency"}
@@ -77,6 +79,7 @@ _LIVE_ALERT_NAMES = {
     "WEB01": "NginxDown",
     "APP01": "container_down",
     "WIN01": "WindowsExporterDown",
+    "AZURE01": "NginxDown",
 }
 
 
@@ -87,6 +90,11 @@ def consider_live_hosts(hosts):
     opened = []
     for host in hosts or []:
         name = (host.get("name") or "").upper()
+        if name == "AZURE01":
+            from app.services.inventory import azure_settings
+
+            if not azure_settings()["configured"]:
+                continue
         spec = LAB_ACTIONS.get(name)
         alert_name = _LIVE_ALERT_NAMES.get(name)
         if spec is None or alert_name is None:
@@ -280,7 +288,7 @@ def maybe_remediate(alert):
             f"Reason: risk. MANUAL_REQUIRED. {action_key} is {risk} risk, so auto-remediation did not run.",
         )
         return None
-    up, up_detail = _service_already_up(action_key)
+    up, up_detail = _service_already_up(server, action_key)
     if up:
         _resolve_open_incident(server, action_key, alert, "service restored")
         _note_once(
@@ -424,6 +432,8 @@ def job_retry_depth(job):
 def _trace(server, action_key, result, reason, **extra):
     payload = {
         "target": getattr(server, "name", None),
+        "environment": getattr(server, "environment", None),
+        "provider": getattr(server, "provider", None),
         "action": action_key,
         "action_key": action_key,
         "trigger": "auto",
@@ -488,6 +498,9 @@ def _create_incident(server, alert, action_key):
             "reason": "incident created",
             "result": "OPEN",
             "target": server.name,
+            "environment": server.environment,
+            "provider": server.provider,
+            "alert_name": alert.alert_name,
             "action": action_key,
             "trigger": "auto",
             "incident_id": incident.id,
@@ -700,6 +713,7 @@ def _start_auto(server, alert, suggestion, incident, retry_of=None):
         "RUNNING",
         f"Auto-remediation requested {action_key}.",
         alert_id=alert.id,
+        alert_name=alert.alert_name,
         incident_id=incident.id,
         attempt=attempt,
     )
@@ -769,6 +783,7 @@ def _finish_auto(job, server, alert, suggestion, incident):
         "FAILED",
         job.verification_detail or "Auto-remediation failed.",
         alert_id=alert.id,
+        alert_name=alert.alert_name,
         exit_code=job.exit_code,
         verification_result=job.verification_result,
         incident_id=None if incident is None else incident.id,
@@ -930,18 +945,18 @@ def _execution_retries_used(job):
     return _auto_retry_count(alert, job.action_key) >= _max_retries()
 
 
-def _service_already_up(action_key):
+def _service_already_up(server, action_key):
     """A stuck firing alert must not restart a service that is already answering."""
     if current_app.config.get("AUTOMATION_EXECUTOR") != "ansible":
         return False, ""
     checker = current_app.config.get("RECOVERY_CHECK")
     if checker is not None:
-        ok, detail = checker(None, action_key)
+        ok, detail = checker(server, action_key)
         return bool(ok), detail or ""
-    from app.services.checks import SERVICE_CHECKS
+    from app.services.checks import service_probe
     from app.services.probes import http_probe, tcp_probe
 
-    spec = SERVICE_CHECKS.get(action_key)
+    spec = service_probe(server, action_key)
     if spec is None:
         return False, ""
     kind, target, label = spec
@@ -1000,8 +1015,8 @@ def _active_conflict(server_id, action_key, alert_id):
     )
     if same_action is not None:
         return (
-            f"Reason: duplicate. Job {same_action} for this server and action is already queued or running, "
-            "so auto-remediation did not create another job."
+            "Skipped because duplicate job already exists. "
+            f"Job {same_action} for this server and action is already queued or running."
         )
     same_alert = db.session.scalar(
         select(AutomationJob.id).where(
@@ -1012,8 +1027,8 @@ def _active_conflict(server_id, action_key, alert_id):
     )
     if same_alert is not None:
         return (
-            f"Reason: duplicate. Auto job {same_alert} for this alert is already queued or running, "
-            "so auto-remediation did not create another job."
+            "Skipped because duplicate job already exists. "
+            f"Job {same_alert} for this alert is already queued or running."
         )
     return None
 
@@ -1060,6 +1075,7 @@ def _note_manual(alert, action_key, message, reason=None):
             "action": action_key,
             "action_key": action_key,
             "alert_id": alert.id,
+            "alert_name": alert.alert_name,
             "target": None if server is None else server.name,
             "trigger": "auto",
             "result": "MANUAL_REQUIRED",

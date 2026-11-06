@@ -155,7 +155,8 @@ def _seed_servers():
             "name": "WEB01",
             "hostname": "WEB01",
             "ip_address": "192.168.10.11",
-            "environment": "prod",
+            "environment": "local",
+            "provider": "vmware",
             "os_type": "linux",
             "status": "unknown",
             "monitoring_target": "192.168.10.11:9100",
@@ -167,7 +168,8 @@ def _seed_servers():
             "name": "APP01",
             "hostname": "APP01",
             "ip_address": "192.168.10.12",
-            "environment": "prod",
+            "environment": "local",
+            "provider": "vmware",
             "os_type": "linux",
             "status": "unknown",
             "monitoring_target": "192.168.10.12:9100",
@@ -179,7 +181,8 @@ def _seed_servers():
             "name": "WIN01",
             "hostname": "WIN01",
             "ip_address": "192.168.10.13",
-            "environment": "prod",
+            "environment": "local",
+            "provider": "vmware",
             "os_type": "windows",
             "status": "unknown",
             "monitoring_target": "192.168.10.13:9182",
@@ -191,11 +194,25 @@ def _seed_servers():
             "name": "MON01",
             "hostname": "MON01",
             "ip_address": "192.168.10.10",
-            "environment": "prod",
+            "environment": "local",
+            "provider": "vmware",
             "os_type": "linux",
             "status": "unknown",
             "monitoring_target": "192.168.10.10:9100",
             "automation_group": "linux_mon",
+            "azure_resource_id": None,
+            "last_seen_at": None,
+        },
+        {
+            "name": "AZURE01",
+            "hostname": "AZURE01",
+            "ip_address": "0.0.0.0",
+            "environment": "cloud",
+            "provider": "azure",
+            "os_type": "linux",
+            "status": "unknown",
+            "monitoring_target": "AZURE01:9100",
+            "automation_group": "azure_linux",
             "azure_resource_id": None,
             "last_seen_at": None,
         },
@@ -208,6 +225,8 @@ def _seed_servers():
             db.session.add(server)
         for key, value in spec.items():
             setattr(server, key, value)
+        if not getattr(server, "provider", None):
+            server.provider = "azure" if server.azure_resource_id else "vmware"
         server.is_active = True
         server.updated_at = _at(22)
         found[spec["name"]] = server

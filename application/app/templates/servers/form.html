@@ -4,7 +4,7 @@
 <h1 class="h3 mb-3">{{ title }}</h1>
 <form method="post" class="card"><div class="card-body">
   {{ form.hidden_tag() }}
-  {% for field in [form.name, form.hostname, form.ip_address, form.environment, form.os_type, form.status, form.monitoring_target, form.automation_group, form.azure_resource_id] %}
+  {% for field in [form.name, form.hostname, form.ip_address, form.environment, form.provider, form.os_type, form.status, form.monitoring_target, form.automation_group, form.azure_resource_id] %}
     <div class="mb-3">
       {{ field.label(class="form-label") }}
       {% if field.type == 'SelectField' %}
