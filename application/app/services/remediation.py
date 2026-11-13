@@ -9,7 +9,7 @@ from app.extensions import db
 from app.models import Alert, AuditLog, AutomationJob, Incident, Server, utcnow
 from app.services.audit import record
 from app.services.automation import AutomationRejected, dispatch, enqueue_job
-from app.executors.actions import action_risk
+from app.executors.actions import SERVICE_LABELS, action_risk
 from app.services.checks import management_refusal, refuse_unreachable_management, verification_notice
 from app.presentation import format_clock
 from app.services.metrics import HOST_CHECKS
@@ -119,6 +119,9 @@ def _probe_is_down(name, host):
     return any(item.get("status") == "DOWN" for item in host.get("services") or [])
 
 
+DUPLICATE_REASON = "An active remediation job already exists for this target and action."
+
+
 def _action_is_running(server_id, action_key):
     return (
         db.session.scalar(
@@ -130,6 +133,132 @@ def _action_is_running(server_id, action_key):
         )
         is not None
     )
+
+
+def trigger_manual_remediation(server, action_key, parameters, actor, alert_id=None):
+    """One operator click. Same checks as auto, and a manual run does not retry itself."""
+    from app.models import User
+
+    if server is None or not getattr(server, "is_active", False):
+        raise AutomationRejected("Server is not available.")
+    actor_row = db.session.get(User, getattr(actor, "id", None)) if getattr(actor, "id", None) else None
+    email = ((actor_row.email if actor_row is not None else None) or "").strip()
+    triggered_by = email or (actor_row.username if actor_row is not None else "") or "unknown"
+    role = None if actor_row is None else actor_row.role
+    if _action_is_running(server.id, action_key):
+        return _skip_duplicate(server, action_key, actor_row, triggered_by, role)
+    incident = _open_manual_incident(server, action_key, alert_id)
+    job = enqueue_job(
+        server_id=server.id,
+        action_key=action_key,
+        parameters=parameters,
+        trigger_source="manual",
+        requested_by=None if actor_row is None else actor_row.id,
+        alert_id=alert_id,
+        incident_id=incident.id,
+        attempt=1,
+    )
+    job = dispatch(job.id, actor=actor_row)
+    _apply_manual_incident(incident, job)
+    return job
+
+
+def _skip_duplicate(server, action_key, actor_row, triggered_by, role):
+    now = utcnow()
+    job = AutomationJob(
+        server_id=server.id,
+        requested_by=None if actor_row is None else actor_row.id,
+        trigger_source="manual",
+        executor=current_app.config.get("AUTOMATION_EXECUTOR", "mock"),
+        action_key=action_key,
+        parameters_json="{}",
+        status="canceled",
+        final_status="DUPLICATE_SKIPPED",
+        reason=DUPLICATE_REASON,
+        mode="MANUAL",
+        triggered_by=triggered_by,
+        user_email=triggered_by if "@" in triggered_by else None,
+        user_role=role,
+        created_at=now,
+        started_at=now,
+        finished_at=now,
+    )
+    db.session.add(job)
+    db.session.commit()
+    record(
+        "remediation.skipped",
+        "automation_job",
+        job.id,
+        {
+            "target": server.name,
+            "service": SERVICE_LABELS.get(action_key, action_key),
+            "action": action_key,
+            "action_key": action_key,
+            "trigger": "manual",
+            "mode": "MANUAL",
+            "triggered_by": triggered_by,
+            "user_email": job.user_email,
+            "user_role": role,
+            "actor": triggered_by,
+            "role": role,
+            "result": "DUPLICATE_SKIPPED",
+            "final_status": "DUPLICATE_SKIPPED",
+            "execution_result": "NOT_RUN",
+            "verification_result": "NOT_RUN",
+            "reason": DUPLICATE_REASON,
+            "message": DUPLICATE_REASON,
+            "job_id": job.id,
+            "playbook_executed": False,
+        },
+        user_id=None if actor_row is None else actor_row.id,
+    )
+    return job
+
+
+def _open_manual_incident(server, action_key, alert_id):
+    current = _current_incident(server.id, action_key)
+    if current is not None and not _incident_is_terminal(current):
+        return current
+    incident = Incident(
+        server_id=server.id,
+        alert_id=alert_id,
+        action_key=action_key,
+        status="open",
+        retry_count=0,
+        manual_required=False,
+        verification_failed=False,
+        blocked=False,
+        opened_at=utcnow(),
+    )
+    db.session.add(incident)
+    db.session.commit()
+    return incident
+
+
+def _apply_manual_incident(incident, job):
+    if incident is None or job is None:
+        return
+    final = job.final_status
+    if final == "SUCCESS":
+        incident.status = "resolved"
+        incident.closed_at = utcnow()
+        incident.reason = "success"
+    elif final == "VERIFICATION_FAILED":
+        incident.verification_failed = True
+        incident.manual_required = True
+        incident.blocked = False
+        incident.reason = "verification_failed"
+    elif final == "EXECUTION_FAILED":
+        incident.manual_required = True
+        incident.verification_failed = False
+        incident.blocked = False
+        incident.reason = "execution_failed"
+    elif final == "MANAGEMENT_BLOCKED":
+        incident.blocked = True
+        incident.manual_required = True
+        incident.verification_failed = False
+        incident.reason = "management_channel_unavailable"
+    db.session.commit()
 
 
 def _live_alert(server, alert_name):
@@ -436,7 +565,11 @@ def _trace(server, action_key, result, reason, **extra):
         "provider": getattr(server, "provider", None),
         "action": action_key,
         "action_key": action_key,
+        "service": SERVICE_LABELS.get(action_key, action_key),
         "trigger": "auto",
+        "mode": "AUTO",
+        "triggered_by": "SYSTEM",
+        "user_role": "SYSTEM",
         "result": result,
         "reason": reason,
         "server_id": getattr(server, "id", None),

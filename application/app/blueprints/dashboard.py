@@ -338,6 +338,9 @@ def _audit_event(row):
         "remediation.verification_failed": "Verification failed after remediation",
         "remediation.verified": "Remediation verified",
         "remediation.failed": "Remediation failed",
+        "remediation.skipped": "Duplicate remediation skipped",
+        "remediation.retry": "Manual remediation retry",
+        "permission.denied": "Permission denied",
     }
     reason = data.get("reason")
     title = titles.get(row.action, row.action)

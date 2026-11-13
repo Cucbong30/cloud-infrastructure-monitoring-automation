@@ -174,6 +174,50 @@ def test_ansible_runs_only_the_allow_listed_playbook(seeded, monkeypatch):
     assert calls["user"] == "lab"
 
 
+def test_playbook_uses_inventory_and_ignores_a_missing_controller_key(monkeypatch, tmp_path):
+    import subprocess
+
+    from app.executors.ansible import run_controller_playbook
+
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr("app.executors.ansible.subprocess.run", fake_run)
+    result = run_controller_playbook(
+        user="bong",
+        host="192.168.10.10",
+        key_file="/home/bong/.ssh/id_ed25519",
+        playbook="~/ansible/playbooks/restart-nginx.yml",
+        timeout=30,
+    )
+    assert result.success is True
+    command = captured["command"]
+    assert "/home/bong/.ssh/id_ed25519" not in command
+    assert command[command.index("ansible-playbook") :] == [
+        "ansible-playbook",
+        "-i",
+        "/etc/ansible/hosts",
+        "~/ansible/playbooks/restart-nginx.yml",
+    ]
+    key = tmp_path / "controller_ed25519"
+    key.write_text("not-a-real-key", encoding="utf-8")
+    run_controller_playbook(
+        user="bong",
+        host="192.168.10.10",
+        key_file=str(key),
+        playbook="~/ansible/playbooks/restart-nginx.yml",
+        timeout=30,
+    )
+    local = captured["command"]
+    user_at = local.index("bong@192.168.10.10")
+    assert local[user_at - 2 : user_at] == ["-i", str(key)]
+    assert "azure01_ed25519" not in local
+    assert "/home/bong/.ssh/id_ed25519" not in local
+
+
 def test_wait_task_failure_is_verification_for_every_target():
     from app.executors.ansible import playbook_failure_stage
 

@@ -32,6 +32,12 @@ ACTIONS = {
     ),
 }
 
+SERVICE_LABELS = {
+    "restart_nginx": "Nginx",
+    "restart_container": "App",
+    "restart_windows_exporter": "Windows Exporter",
+}
+
 LAB_TARGETS = {
     "restart_nginx": ("WEB01", "192.168.10.11", {}),
     "restart_container": ("APP01", "192.168.10.12", {"container_name": "app01-web"}),
