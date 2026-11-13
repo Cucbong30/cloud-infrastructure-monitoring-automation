@@ -39,6 +39,10 @@ BADGE_CLASSES = {
     "Verification Failed": "danger",
     "VERIFICATION_FAILED": "danger",
     "MANUAL_REQUIRED": "warning",
+    "MANAGEMENT_BLOCKED": "warning",
+    "QUEUED": "secondary",
+    "AUTO": "primary",
+    "MANUAL": "secondary",
     "PENDING": "secondary",
     "RUNNING": "primary",
     "CANCELED": "dark",
@@ -112,7 +116,7 @@ def job_outcome_label(job):
         if getattr(job, "reason", None) == "retry_limit" or (kind == "skipped" and _retry_ended_manual(job)):
             return "MANUAL_REQUIRED"
         return "EXECUTION_FAILED"
-    return {"queued": "PENDING", "running": "RUNNING", "canceled": "CANCELED"}.get(status, job_status_label(status))
+    return {"queued": "QUEUED", "running": "RUNNING", "canceled": "CANCELED"}.get(status, job_status_label(status))
 
 
 def _retry_ended_manual(job):
@@ -155,6 +159,42 @@ VERIFICATION_SUMMARIES = {
 }
 
 
+def job_mode(job):
+    stored = getattr(job, "mode", None)
+    if stored:
+        return stored
+    source = getattr(job, "trigger_source", None)
+    if source == "manual" or (source == "remediation" and getattr(job, "requested_by", None)):
+        return "MANUAL"
+    if source:
+        return "AUTO"
+    return "—"
+
+
+def verification_stage(job):
+    return {"passed": "PASSED", "failed": "FAILED", "blocked": "NOT_RUN", "skipped": "SKIPPED"}.get(
+        getattr(job, "verification_result", None),
+        "—",
+    )
+
+
+def retry_decision(job):
+    """Manual runs do not retry. Verification and a blocked channel do not retry either."""
+    if job_mode(job) == "MANUAL" or getattr(job, "trigger_source", None) == "manual":
+        return "NO"
+    if getattr(job, "verification_result", None) in {"failed", "blocked", "passed"}:
+        return "NO"
+    final = getattr(job, "final_status", None)
+    if final in {"VERIFICATION_FAILED", "BLOCKED", "MANAGEMENT_BLOCKED", "SUCCESS", "DUPLICATE_SKIPPED"}:
+        return "NO"
+    attempt = getattr(job, "attempt", None) or 0
+    if getattr(job, "retry_of_job_id", None) or attempt > 1:
+        return str(max(attempt - 1, 1))
+    if final == "EXECUTION_FAILED":
+        return "1"
+    return "NO"
+
+
 def execution_result_label(job):
     """The remediation command, separate from the post-check."""
     kind = getattr(job, "verification_result", None)
@@ -193,6 +233,7 @@ def audit_facts(entry):
     if not isinstance(data, dict):
         data = {}
     reason = data.get("message") or data.get("reason") or "—"
+    final_status = data.get("final_status") or data.get("result") or "—"
     return {
         "target": data.get("target") or "—",
         "action": data.get("action") or data.get("action_key") or getattr(entry, "action", "—"),
@@ -201,6 +242,15 @@ def audit_facts(entry):
         "actor": data.get("actor") or (getattr(getattr(entry, "user", None), "username", None) or "SYSTEM"),
         "role": data.get("role") or (getattr(getattr(entry, "user", None), "role", None) or "SYSTEM"),
         "reason": reason,
+        "mode": data.get("mode") or _trigger_token(data.get("trigger") or data.get("trigger_source")),
+        "service": data.get("service") or "—",
+        "incident_id": data.get("incident_id") if data.get("incident_id") not in (None, "") else "—",
+        "job_id": data.get("job_id")
+        or (getattr(entry, "resource_id", None) if getattr(entry, "resource_type", None) == "automation_job" else "—"),
+        "final_status": final_status,
+        "triggered_by": data.get("triggered_by") or data.get("actor") or "—",
+        "execution_result": data.get("execution_result") or ("NOT_RUN" if final_status == "DUPLICATE_SKIPPED" else "—"),
+        "verification_result": data.get("verification_result") or ("NOT_RUN" if final_status == "DUPLICATE_SKIPPED" else "—"),
     }
 
 

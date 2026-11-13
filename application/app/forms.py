@@ -44,6 +44,7 @@ class ServerForm(FlaskForm):
     hostname = StringField("Hostname", validators=[DataRequired(), Length(max=255)])
     ip_address = StringField("IP address", validators=[DataRequired(), Length(max=45)])
     environment = StringField("Environment", validators=[DataRequired(), Length(max=40)])
+    provider = SelectField("Provider", choices=PROVIDER_CHOICES, validators=[DataRequired()])
     os_type = SelectField("OS", choices=OS_CHOICES, validators=[DataRequired()])
     status = SelectField("Status", choices=STATUS_CHOICES, validators=[DataRequired()])
     monitoring_target = StringField("Monitoring target", validators=[Optional(), Length(max=255)])
@@ -79,9 +80,18 @@ class ServerForm(FlaskForm):
             raise ValidationError("Enter an Azure resource ID without spaces.")
 
 
+SERVICE_CHOICES = [
+    ("Nginx", "Nginx"),
+    ("App", "App"),
+    ("Windows Exporter", "Windows Exporter"),
+]
+
+
 class JobForm(FlaskForm):
-    server_id = SelectField("Server", coerce=int, validators=[DataRequired()])
-    action_key = SelectField("Automation action", choices=ACTION_CHOICES, validators=[DataRequired()])
+    server_id = SelectField("Target", coerce=int, validators=[DataRequired()])
+    service = SelectField("Service", choices=SERVICE_CHOICES, default="Nginx", validators=[Optional()])
+    action_key = SelectField("Action", choices=ACTION_CHOICES, validators=[DataRequired()])
+    mode = SelectField("Mode", choices=[("MANUAL", "MANUAL")], default="MANUAL", validators=[Optional()])
     service_name = StringField("Service name", validators=[Optional(), Length(max=128)])
     container_name = StringField("Container name", validators=[Optional(), Length(max=128)])
     path = StringField("Path token", validators=[Optional(), Length(max=128)])

@@ -15,10 +15,13 @@ from app.presentation import (
     format_clock,
     execution_result_label,
     job_duration_seconds,
+    job_mode,
     job_outcome_label,
     job_status_label,
+    retry_decision,
     trigger_label,
     verification_label,
+    verification_stage,
     verification_summary,
 )
 
@@ -121,6 +124,9 @@ def create_app(test_config=None):
             "trigger_label": trigger_label,
             "verification_label": verification_label,
             "verification_summary": verification_summary,
+            "verification_stage": verification_stage,
+            "retry_decision": retry_decision,
+            "job_mode": job_mode,
             "auto_remediation_enabled": app.config.get("AUTO_REMEDIATION_ENABLED", False),
             "automation_executor": app.config.get("AUTOMATION_EXECUTOR", "mock"),
         }

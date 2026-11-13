@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ runbook.title }} · Operations Portal{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">View Runbook: {{ runbook.slug }}</h1>
+  <a class="btn btn-outline-secondary" href="{{ url_for('automation.index') }}">Job history</a>
+</div>
+<div class="card"><div class="card-body">
+  <h2 class="h5">{{ runbook.title }}</h2>
+  <p class="text-secondary">{{ runbook.applies }}</p>
+  <p>{{ runbook.summary }}</p>
+  <ol>
+    {% for step in runbook.steps %}
+      <li class="mb-2">{{ step }}</li>
+    {% endfor %}
+  </ol>
+</div></div>
+{% endblock %}

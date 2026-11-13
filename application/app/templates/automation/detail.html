@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Job {{ job.id }} · Operations Portal{% endblock %}
+{% block head_extra %}
+{% if job.status in ['queued', 'running'] %}
+  <meta http-equiv="refresh" content="3">
+{% endif %}
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Job {{ job.id }}</h1>
@@ -10,6 +15,10 @@
     <dt class="col-sm-3">Target</dt>
     <dd class="col-sm-9">{% if job.server %}<a href="{{ url_for('servers.detail', server_id=job.server.id) }}">{{ job.server.name }}</a> <span class="text-secondary">{{ job.server.ip_address }} · {{ job.server.environment }} · {{ job.server.provider }}</span>{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Action</dt><dd class="col-sm-9"><code>{{ job.action_key }}</code></dd>
+    <dt class="col-sm-3">Mode</dt>
+    <dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(job_mode(job)) }}">{{ job_mode(job) }}</span></dd>
+    <dt class="col-sm-3">Triggered by</dt>
+    <dd class="col-sm-9">{% set mode_label = job_mode(job) %}{{ job.triggered_by or ('SYSTEM' if mode_label == 'AUTO' else '—') }}{% if job.user_role %} · {{ job.user_role }}{% elif mode_label == 'AUTO' %} · SYSTEM{% endif %}</dd>
     <dt class="col-sm-3">Risk</dt><dd class="col-sm-9">{{ action_risk(job.action_key)|upper }}</dd>
     <dt class="col-sm-3">Trigger</dt>
     <dd class="col-sm-9">
@@ -39,7 +48,18 @@
       <dt class="col-sm-3">Next step</dt><dd class="col-sm-9">{{ auto.intervention }}</dd>
     {% endif %}
     <dt class="col-sm-3">Final status</dt>
-    <dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ job_outcome_label(job) }}</span></dd>
+    <dd class="col-sm-9">
+      <span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ job_outcome_label(job) }}</span>
+      <div>Execution: {{ execution_result_label(job) }}</div>
+      <div>Verification: {{ verification_stage(job) }}</div>
+      <div>Retry: {{ retry_decision(job) }}</div>
+      {% if job.status in ['queued', 'running'] %}
+        <div class="text-secondary">This page refreshes while the job is {{ job_outcome_label(job) }}.</div>
+      {% endif %}
+      {% if runbook %}
+        <div class="mt-2"><a href="{{ url_for('automation.runbook', slug=runbook.slug) }}">View Runbook: {{ runbook.slug }}</a></div>
+      {% endif %}
+    </dd>
     <dt class="col-sm-3">Started</dt><dd class="col-sm-9">{{ job.started_at | dt }}</dd>
     <dt class="col-sm-3">Finished</dt><dd class="col-sm-9">{{ job.finished_at | dt }}</dd>
     <dt class="col-sm-3">Duration</dt>
@@ -79,6 +99,35 @@
     </form>
   {% endif %}
 </div></div>
+{% if job_outcome_label(job) == 'DUPLICATE_SKIPPED' %}
+<div id="duplicate-drawer" class="log-drawer">
+  <div class="log-drawer-panel" role="dialog" aria-labelledby="duplicate-title">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <h2 class="h5 mb-1" id="duplicate-title">DUPLICATE_SKIPPED</h2>
+        <div class="text-secondary small">{{ job_mode(job) }} · {{ job.action_key }}</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-light" id="duplicate-close">Close</button>
+    </div>
+    <p class="mb-3"><strong>Reason:</strong> {{ job.reason }}</p>
+    <dl class="row mb-0">
+      <dt class="col-5">Target</dt><dd class="col-7">{{ job.server.name if job.server else '—' }}</dd>
+      <dt class="col-5">Action</dt><dd class="col-7"><code>{{ job.action_key }}</code></dd>
+      <dt class="col-5">Mode</dt><dd class="col-7">{{ job_mode(job) }}</dd>
+      <dt class="col-5">Triggered by</dt><dd class="col-7">{{ job.triggered_by or '—' }}{% if job.user_role %} · {{ job.user_role }}{% endif %}</dd>
+      <dt class="col-5">Final status</dt><dd class="col-7">DUPLICATE_SKIPPED</dd>
+      <dt class="col-5">Execution</dt><dd class="col-7">NOT_RUN</dd>
+      <dt class="col-5">Active job</dt>
+      <dd class="col-7">{% if active_job %}<a href="{{ url_for('automation.detail', job_id=active_job.id) }}">Job {{ active_job.id }} {{ job_outcome_label(active_job) }}</a>{% else %}The earlier job is no longer queued or running.{% endif %}</dd>
+    </dl>
+  </div>
+</div>
+<script>
+  document.getElementById("duplicate-close")?.addEventListener("click", function () {
+    document.getElementById("duplicate-drawer")?.setAttribute("hidden", "");
+  });
+</script>
+{% endif %}
 <h2 class="h5">Stdout</h2>
 <pre class="output card card-body">{% if job.output_excerpt %}{{ job.output_excerpt }}{% else %}—{% endif %}</pre>
 <h2 class="h5">Stderr / error</h2>
@@ -86,7 +135,7 @@
 <h2 class="h5">Audit events</h2>
 <div class="table-responsive card">
   <table class="table mb-0">
-    <thead><tr><th>When</th><th>Actor</th><th>Role</th><th>Target</th><th>Action</th><th>Trigger</th><th>Result</th><th>Reason</th></tr></thead>
+    <thead><tr><th>When</th><th>Actor</th><th>Role</th><th>Target</th><th>Action</th><th>Mode</th><th>Execution</th><th>Verification</th><th>Final status</th><th>Reason</th></tr></thead>
     <tbody>
       {% for entry in audits %}
         {% set facts = audit_facts(entry) %}
@@ -96,12 +145,14 @@
           <td>{{ facts.role }}</td>
           <td>{{ facts.target }}</td>
           <td><code>{{ facts.action }}</code></td>
-          <td>{{ facts.trigger }}</td>
-          <td>{{ facts.result }}</td>
+          <td>{{ facts.mode }}</td>
+          <td>{{ facts.execution_result }}</td>
+          <td>{{ facts.verification_result }}</td>
+          <td>{{ facts.final_status }}</td>
           <td>{{ facts.reason }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="8" class="text-secondary">No audit events for this job.</td></tr>
+        <tr><td colspan="10" class="text-secondary">No audit events for this job.</td></tr>
       {% endfor %}
     </tbody>
   </table>

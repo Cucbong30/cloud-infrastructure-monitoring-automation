@@ -50,6 +50,7 @@ _ACTION_EVENTS = {
     "incident.created": "service_down",
     "auto_remediation.started": "remediation_started",
     "auto_remediation.retry": "retry",
+    "remediation.retry": "retry",
     "auto_remediation.verified": "remediation_success",
     "remediation.verified": "remediation_success",
     "auto_remediation.failed": "execution_failed",
@@ -143,14 +144,33 @@ def notify_audit(action, details):
         event,
         details.get("target") or "—",
         service,
-        details.get("result") or "—",
+        details.get("final_status") or details.get("result") or "—",
         details.get("message") or details.get("reason") or "—",
         action=action_key or "—",
         alert=str(details.get("alert_name") or details.get("alert_id") or "—"),
+        mode=details.get("mode") or "",
+        triggered_by=details.get("triggered_by") or "",
+        user_role=details.get("user_role") or details.get("role") or "",
+        execution_result=details.get("execution_result") or "",
+        verification_result=details.get("verification_result") or "",
     )
 
 
-def send_alert_email(event_type, target, service, status, reason, action="", when=None, alert=""):
+def send_alert_email(
+    event_type,
+    target,
+    service,
+    status,
+    reason,
+    action="",
+    when=None,
+    alert="",
+    mode="",
+    triggered_by="",
+    user_role="",
+    execution_result="",
+    verification_result="",
+):
     """Send one alert. Graph 202 Accepted means the send was accepted."""
     if event_type not in EVENT_TITLES:
         return False
@@ -168,6 +188,11 @@ def send_alert_email(event_type, target, service, status, reason, action="", whe
         "status": status or "—",
         "reason": reason or "—",
         "severity": SEVERITY.get(event_type, "critical"),
+        "mode": mode or "",
+        "triggered_by": triggered_by or "",
+        "user_role": user_role or "",
+        "execution_result": execution_result or "",
+        "verification_result": verification_result or "",
     }
     transport = current_app.config.get("NOTIFY_TRANSPORT")
     if transport is not None:
@@ -343,6 +368,9 @@ _STATUS_BADGES = {
     "EXECUTION_FAILED": ("Execution Failed", "bad"),
     "MANUAL_REQUIRED": ("Manual Required", "bad"),
     "BLOCKED": ("Blocked", "warn"),
+    "MANAGEMENT_BLOCKED": ("Blocked", "warn"),
+    "DUPLICATE_SKIPPED": ("Duplicate Skipped", "warn"),
+    "RETRY": ("Retry", "run"),
     "FAILED": ("Failed", "bad"),
     "RUNNING": ("Running", "run"),
 }
@@ -451,17 +479,30 @@ def message_text(event, fields):
     theme = _THEMES.get(severity_key, _THEMES["critical"])
     clock = _event_time(fields.get("time"))
     summary = _SUMMARIES.get(event, "")
-    rows = _detail_table(
+    detail_rows = [
+        ("&#9638;", "Target", html.escape(str(fields.get("target") or "—")), True),
+        ("&#9881;", "Service", html.escape(str(fields.get("service") or "—")), False),
+        ("&#128197;", "Event Time", html.escape(clock), False),
+        ("&#8767;", "Event", html.escape(str(fields.get("event") or title)), False),
+        ("&#128295;", "Action", html.escape(_action_label(fields.get("action"))), False),
+    ]
+    if fields.get("mode"):
+        detail_rows.append(("&#9679;", "Mode", html.escape(str(fields["mode"])), False))
+    if fields.get("triggered_by"):
+        detail_rows.append(("&#9993;", "Triggered By", html.escape(str(fields["triggered_by"])), False))
+    if fields.get("user_role"):
+        detail_rows.append(("&#128100;", "Role", html.escape(str(fields["user_role"])), False))
+    if fields.get("execution_result"):
+        detail_rows.append(("&#9881;", "Execution Result", html.escape(str(fields["execution_result"])), False))
+    if fields.get("verification_result"):
+        detail_rows.append(("&#10003;", "Verification Result", html.escape(str(fields["verification_result"])), False))
+    detail_rows.extend(
         (
-            ("&#9638;", "Target", html.escape(str(fields.get("target") or "—")), True),
-            ("&#9881;", "Service", html.escape(str(fields.get("service") or "—")), False),
-            ("&#128197;", "Event Time", html.escape(clock), False),
-            ("&#8767;", "Event", html.escape(str(fields.get("event") or title)), False),
-            ("&#128295;", "Action", html.escape(_action_label(fields.get("action"))), False),
             ("&#9873;", "Final Status", _status_badge(fields.get("status"), severity_key), False),
             ("&#9432;", "Reason", html.escape(str(fields.get("reason") or "—")), False),
         )
     )
+    rows = _detail_table(tuple(detail_rows))
     body = (
         "<div style=\"margin:0;padding:0;background:#f3f5f8;\">"
         "<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" "

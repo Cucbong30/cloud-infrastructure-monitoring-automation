@@ -3,7 +3,7 @@ from flask_login import current_user
 from sqlalchemy import select
 
 from app.authz import roles_required
-from app.executors.actions import ACTIONS, target_spec
+from app.executors.actions import ACTIONS, SERVICE_LABELS
 from app.extensions import db
 from app.forms import JobForm
 from app.models import AuditLog, AutomationJob, Server
@@ -12,11 +12,11 @@ from app.services.automation import (
     REJECTED_PARAMETER_KEYS,
     AutomationRejected,
     RemediationUnavailable,
-    queue_and_dispatch,
     retry_job,
 )
 from app.services.checks import management_block, management_status
-from app.services.remediation import LAB_ACTIONS, blocked_reason, job_auto_context
+from app.services.remediation import LAB_ACTIONS, blocked_reason, job_auto_context, trigger_manual_remediation
+from app.services.runbooks import runbook_for, runbook_page
 
 bp = Blueprint("automation", __name__, url_prefix="/automation")
 
@@ -27,6 +27,8 @@ FORM_KEYS = {
     "service_name",
     "container_name",
     "path",
+    "service",
+    "mode",
     "simulate",
     "submit",
 }
@@ -34,8 +36,15 @@ FORM_KEYS = {
 
 def _prepare_form():
     form = JobForm()
-    servers = db.session.scalars(select(Server).where(Server.is_active.is_(True)).order_by(Server.name)).all()
-    form.server_id.choices = [(server.id, f"{server.name} ({server.environment})") for server in servers]
+    servers = db.session.scalars(select(Server).where(Server.is_active.is_(True))).all()
+    order = {"WEB01": 0, "APP01": 1, "WIN01": 2, "AZURE01": 3}
+    servers = sorted(servers, key=lambda server: (order.get((server.name or "").upper(), 9), server.name or ""))
+    choices = [
+        (server.id, f"{server.name} ({server.environment})")
+        for server in servers
+        if (server.name or "").upper() in LAB_ACTIONS
+    ]
+    form.server_id.choices = choices or [(0, "No lab target")]
     return form
 
 
@@ -76,21 +85,26 @@ def create_job():
     if not form.validate_on_submit():
         abort(400)
     action = ACTIONS.get(form.action_key.data)
-    if action is None:
+    server = db.session.get(Server, form.server_id.data)
+    if action is None or server is None or form.mode.data != "MANUAL":
         abort(400)
-    parameters = dict(LAB_TARGETS[action.key][2])
+    allowed = LAB_ACTIONS.get((server.name or "").upper())
+    expected_service = SERVICE_LABELS.get(action.key)
+    posted_service = form.service.data or expected_service
+    posted_mode = form.mode.data or "MANUAL"
+    if allowed is None or allowed[0] != action.key or posted_service != expected_service or posted_mode != "MANUAL":
+        flash("Choose the service and action that belong to this target.", "warning")
+        return redirect(url_for("automation.index"))
+    parameters = dict(allowed[1])
     if current_app.config.get("AUTOMATION_EXECUTOR") == "mock" and form.simulate.data:
         parameters["simulate"] = form.simulate.data
     try:
-        job = queue_and_dispatch(
-            server_id=form.server_id.data,
-            action_key=action.key,
-            parameters=parameters,
-            actor=current_user,
+        job = trigger_manual_remediation(
+            server,
+            action.key,
+            parameters,
+            current_user,
         )
-    except RemediationUnavailable as exc:
-        flash(exc.reason, "warning")
-        return redirect(url_for("automation.index"))
     except AutomationRejected:
         abort(400)
     flash(
@@ -113,13 +127,35 @@ def detail(job_id):
     retries = db.session.scalars(
         select(AutomationJob).where(AutomationJob.retry_of_job_id == job.id).order_by(AutomationJob.id)
     ).all()
+    active_job = None
+    if job.final_status == "DUPLICATE_SKIPPED" and job.server_id and job.action_key:
+        active_job = db.session.scalar(
+            select(AutomationJob)
+            .where(
+                AutomationJob.server_id == job.server_id,
+                AutomationJob.action_key == job.action_key,
+                AutomationJob.status.in_(("queued", "running")),
+                AutomationJob.id != job.id,
+            )
+            .order_by(AutomationJob.id.desc())
+        )
     return render_template(
         "automation/detail.html",
         job=job,
         audits=audits,
         retries=retries,
         auto=job_auto_context(job),
+        runbook=runbook_for(job.action_key, job.final_status or job_outcome_label(job)),
+        active_job=active_job,
     )
+
+
+@bp.get("/runbooks/<slug>")
+def runbook(slug):
+    page = runbook_page(slug)
+    if page is None:
+        abort(404)
+    return render_template("automation/runbook.html", runbook=page)
 
 
 @bp.post("/jobs/<int:job_id>/retry")

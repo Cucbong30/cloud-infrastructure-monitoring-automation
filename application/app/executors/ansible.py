@@ -11,6 +11,7 @@ from app.models import utcnow
 from app.validation import TOKEN_RE
 
 CONTROLLER_HOST = "192.168.10.10"
+CONTROLLER_INVENTORY = "/etc/ansible/hosts"
 _PORT_CACHE = {}
 _PORT_CACHE_SECONDS = 10
 _MANAGEMENT_PORTS = {
@@ -18,6 +19,14 @@ _MANAGEMENT_PORTS = {
     ("192.168.10.12", 22),
     ("192.168.10.13", 5985),
 }
+
+
+def _local_identity(key_file):
+    """Pass -i only for a key file on this machine. Target keys stay in the Ansible inventory."""
+    path = (key_file or "").strip()
+    if path and os.path.isfile(path):
+        return ["-i", path]
+    return []
 
 
 def controller_port_open(host, port, timeout=2):
@@ -51,8 +60,7 @@ def controller_port_open(host, port, timeout=2):
         "-o",
         "ConnectTimeout=4",
     ]
-    if key_file:
-        command.extend(["-i", key_file])
+    command.extend(_local_identity(key_file))
     command.extend([f"{user}@{controller}", remote])
     try:
         completed = subprocess.run(
@@ -175,9 +183,8 @@ def run_controller_playbook(*, user, host, key_file, playbook, timeout):
         "-o",
         "ConnectTimeout=10",
     ]
-    if key_file:
-        command.extend(["-i", key_file])
-    command.extend([f"{user}@{host}", "ansible-playbook", playbook])
+    command.extend(_local_identity(key_file))
+    command.extend([f"{user}@{host}", "ansible-playbook", "-i", CONTROLLER_INVENTORY, playbook])
     try:
         completed = subprocess.run(
             command,

@@ -39,6 +39,7 @@ def _fill_form(form, server):
     form.hostname.data = server.hostname
     form.ip_address.data = server.ip_address
     form.environment.data = server.environment
+    form.provider.data = server.provider
     form.os_type.data = server.os_type
     form.status.data = server.status
     form.monitoring_target.data = server.monitoring_target or ""
