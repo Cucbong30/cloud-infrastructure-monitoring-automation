@@ -1,0 +1,51 @@
+---
+# Week 9 - Approval & High-risk Action Control
+# Target: APP01
+# Component: Docker Runtime
+# Action: restart_docker_service
+# Risk: MEDIUM
+# Approval: Required
+#
+# Purpose:
+# Restart the Docker service on APP01 and verify that
+# Docker, app01-web container, and application port 8080
+# return to the expected operational state.
+
+- name: Restart Docker service on APP01
+  hosts: APP01
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Check Docker service before restart
+      ansible.builtin.command: systemctl is-active docker
+      register: docker_before
+      changed_when: false
+
+    - name: Restart Docker service
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+
+    - name: Verify Docker service is active
+      ansible.builtin.command: systemctl is-active docker
+      register: docker_after
+      changed_when: false
+      failed_when: docker_after.stdout.strip() != "active"
+
+    - name: Verify app01-web container is running
+      ansible.builtin.shell: >
+        docker ps
+        --filter "name=app01-web"
+        --filter "status=running"
+        --format "{{ '{{' }}.Names{{ '}}' }}"
+      register: container_status
+      changed_when: false
+      failed_when: "'app01-web' not in container_status.stdout"
+
+    - name: Verify application HTTP port 8080
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 8080
+        timeout: 30
+      delegate_to: localhost

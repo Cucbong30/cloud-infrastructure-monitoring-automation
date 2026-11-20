@@ -1,0 +1,50 @@
+---
+# Week 9 - Approval & High-risk Action Control
+# Target: AZURE01
+# Component: Operating System
+# Action: reboot_server
+# Risk: HIGH
+# Approval: Admin approval required
+#
+# Purpose:
+# Reboot AZURE01 and verify that the host, Nginx,
+# Node Exporter, HTTP service, and monitoring endpoint
+# recover successfully after reboot.
+
+- name: Reboot AZURE01
+  hosts: AZURE01
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Reboot AZURE01
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+        connect_timeout: 10
+        test_command: whoami
+
+    - name: Verify Nginx is active
+      ansible.builtin.command: systemctl is-active nginx
+      register: nginx_status
+      changed_when: false
+      failed_when: nginx_status.stdout.strip() != "active"
+
+    - name: Verify Node Exporter is active
+      ansible.builtin.command: systemctl is-active node_exporter
+      register: node_exporter_status
+      changed_when: false
+      failed_when: node_exporter_status.stdout.strip() != "active"
+
+    - name: Verify HTTP port 80
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 80
+        timeout: 30
+      delegate_to: localhost
+
+    - name: Verify Node Exporter port 9100
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 9100
+        timeout: 30
+      delegate_to: localhost
