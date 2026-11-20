@@ -27,7 +27,7 @@ Set `SECRET_KEY` and `DEMO_USER_PASSWORD` in `.env` before seeding.
 .venv\Scripts\flask --app wsgi run
 ```
 
-Open http://127.0.0.1:5000 and sign in as `admin`, `operator`, or `viewer`.
+Open http://localhost:5000 and sign in as `admin`, `operator`, or `viewer`. Microsoft sign-in returns to `http://localhost:5000/auth/callback`, so the portal has to be opened on `localhost`.
 
 ## Checks
 

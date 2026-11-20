@@ -37,7 +37,7 @@ def test_remediation_creates_one_job_and_audit(seeded):
         jobs = db.session.scalars(select(AutomationJob).where(AutomationJob.alert_id == alert.id)).all()
         assert len(jobs) == 1
         assert jobs[0].action_key == "restart_nginx"
-        assert jobs[0].trigger_source == "remediation"
+        assert jobs[0].trigger_source == "auto"
         assert jobs[0].status == "succeeded"
         assert jobs[0].verification_result == "passed"
         job_audit = db.session.scalar(
@@ -52,16 +52,22 @@ def test_remediation_creates_one_job_and_audit(seeded):
 
 def test_failed_remediation_can_retry(seeded):
     seeded.config["AUTO_REMEDIATION_ENABLED"] = True
+    seeded.config["AUTO_REMEDIATION_COOLDOWN_SECONDS"] = 0
     with seeded.app_context():
         sync_alerts(FakePrometheus([_alert("service_down", "fp-retry")]))
         alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-retry"))
         job = db.session.scalar(select(AutomationJob).where(AutomationJob.alert_id == alert.id))
         assert job.action_key == "restart_nginx"
         job.status = "failed"
+        job.verification_result = "skipped"
+        job.verification_detail = "Playbook failed before verification."
         db.session.commit()
         retried = maybe_remediate(alert)
         assert retried is not None
         assert retried.id != job.id
+        assert retried.retry_of_job_id is None
+        assert retried.attempt == 1
+        seeded.config["AUTO_REMEDIATION_COOLDOWN_SECONDS"] = 300
         assert maybe_remediate(alert) is None
 
 

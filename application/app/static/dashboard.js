@@ -7,6 +7,7 @@
   const logEvents = document.getElementById("log-events");
   const logClose = document.getElementById("log-close");
   let previous = {};
+  let renderedStamp = "";
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -67,7 +68,32 @@
       .join("");
   }
 
+  function stamp(data) {
+    const kpis = data.kpis || {};
+    const hosts = (data.hosts || []).map((host) => [
+      host.name,
+      host.status,
+      host.cpu,
+      host.memory,
+      host.disk,
+      host.uptime,
+      host.exporter,
+      host.maintenance,
+      host.management && host.management.status,
+      (host.services || []).map((service) => `${service.status}:${service.latency_ms}`).join(","),
+    ]);
+    const alerts = (data.alerts || []).map((alert) => [alert.id, alert.status, alert.severity, alert.summary]);
+    const services = (data.services || []).map((service) => [service.host, service.name, service.status, service.latency_ms]);
+    return JSON.stringify([kpis, hosts, alerts, services, data.prometheus_available]);
+  }
+
   function render(data) {
+    const nextStamp = stamp(data);
+    if (nextStamp === renderedStamp) {
+      setText("updated-at", "just now");
+      return;
+    }
+    renderedStamp = nextStamp;
     const kpis = data.kpis || {};
     const hosts = data.hosts || [];
     setText("kpi-servers", kpis.servers);
@@ -103,7 +129,7 @@
           return `<tr class="host-row ${rowClass}${changed ? " flash" : ""}" data-host="${escapeHtml(host.name)}">
             <td><a href="${escapeHtml(host.href)}">${escapeHtml(host.name)}</a><div class="text-secondary small">${escapeHtml(host.role)}</div></td>
             <td>${escapeHtml(host.ip)}</td>
-            <td>${pill(host.status)}</td>
+            <td>${pill(host.status)}${host.maintenance ? ' <span class="pill pill-maintenance">Maintenance</span>' : ""}</td>
             <td>${escapeHtml(host.cpu)}${meter(host.cpu_value)}</td>
             <td>${escapeHtml(host.memory)}${meter(host.memory_value)}</td>
             <td>${escapeHtml(host.disk)}${meter(host.disk_value)}</td>
@@ -241,6 +267,11 @@
     }
   }
 
-  refresh();
-  setInterval(refresh, 5000);
+  function loop() {
+    refresh().finally(() => {
+      window.setTimeout(loop, 5000);
+    });
+  }
+
+  loop();
 })();

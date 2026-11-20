@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
+
 BADGE_CLASSES = {
     "online": "success",
     "warning": "warning",
@@ -25,10 +27,25 @@ BADGE_CLASSES = {
     "Running": "primary",
     "succeeded": "success",
     "Success": "success",
+    "SUCCESS": "success",
     "failed": "danger",
     "Failed": "danger",
+    "FAILED": "danger",
+    "EXECUTION_FAILED": "danger",
+    "COOLDOWN_SKIPPED": "secondary",
+    "DUPLICATE_SKIPPED": "secondary",
     "Blocked": "warning",
+    "BLOCKED": "warning",
     "Verification Failed": "danger",
+    "VERIFICATION_FAILED": "danger",
+    "MANUAL_REQUIRED": "warning",
+    "MANAGEMENT_BLOCKED": "warning",
+    "QUEUED": "secondary",
+    "AUTO": "primary",
+    "MANUAL": "secondary",
+    "PENDING": "secondary",
+    "RUNNING": "primary",
+    "CANCELED": "dark",
     "canceled": "dark",
     "admin": "danger",
     "operator": "primary",
@@ -40,13 +57,30 @@ BADGE_CLASSES = {
     "powershell": "primary",
     "shell": "dark",
     "manual": "secondary",
+    "Manual": "secondary",
     "remediation": "warning",
+    "auto": "primary",
+    "Auto": "primary",
     "system": "info",
+    "System": "info",
 }
 
 
 def badge_class(value):
     return BADGE_CLASSES.get(value, "secondary")
+
+
+def trigger_label(job):
+    source = getattr(job, "trigger_source", None)
+    if source == "auto":
+        return "Auto"
+    if source == "manual":
+        return "Manual"
+    if source == "system":
+        return "System"
+    if source == "remediation":
+        return "Manual" if getattr(job, "requested_by", None) else "Auto"
+    return source or "—"
 
 
 JOB_STATUS_LABELS = {
@@ -63,16 +97,51 @@ def job_status_label(status):
 
 
 def job_outcome_label(job):
+    """Final status shown on Job Detail and the job list."""
+    stored = getattr(job, "final_status", None)
+    if stored:
+        return stored
     kind = getattr(job, "verification_result", None)
-    if kind == "blocked":
-        return "Blocked"
-    if kind == "failed":
-        return "Verification Failed"
     output = getattr(job, "output_excerpt", None) or ""
-    if "No route to host" in output or "Failed to connect to the host via ssh" in output:
-        return "Blocked"
+    if kind == "blocked" or "No route to host" in output or "Failed to connect to the host via ssh" in output:
+        return "BLOCKED"
+    if kind == "failed":
+        return "VERIFICATION_FAILED"
     status = getattr(job, "status", None)
-    return job_status_label(status if status is not None else job)
+    if status is None:
+        return job_status_label(job)
+    if status == "succeeded":
+        return "SUCCESS"
+    if status == "failed":
+        if getattr(job, "reason", None) == "retry_limit" or (kind == "skipped" and _retry_ended_manual(job)):
+            return "MANUAL_REQUIRED"
+        return "EXECUTION_FAILED"
+    return {"queued": "QUEUED", "running": "RUNNING", "canceled": "CANCELED"}.get(status, job_status_label(status))
+
+
+def _retry_ended_manual(job):
+    if getattr(job, "retry_of_job_id", None):
+        return True
+    job_id = getattr(job, "id", None)
+    if not job_id:
+        return False
+    try:
+        from flask import has_app_context
+
+        from app.extensions import db
+        from app.models import AutomationJob
+    except Exception:
+        return False
+    if not has_app_context():
+        return False
+    later = db.session.scalar(
+        select(AutomationJob.id).where(
+            AutomationJob.retry_of_job_id == job_id,
+            AutomationJob.status == "failed",
+            AutomationJob.verification_result == "skipped",
+        )
+    )
+    return later is not None
 
 
 VERIFICATION_LABELS = {
@@ -90,12 +159,99 @@ VERIFICATION_SUMMARIES = {
 }
 
 
+def job_mode(job):
+    stored = getattr(job, "mode", None)
+    if stored:
+        return stored
+    source = getattr(job, "trigger_source", None)
+    if source == "manual" or (source == "remediation" and getattr(job, "requested_by", None)):
+        return "MANUAL"
+    if source:
+        return "AUTO"
+    return "—"
+
+
+def verification_stage(job):
+    return {"passed": "PASSED", "failed": "FAILED", "blocked": "NOT_RUN", "skipped": "SKIPPED"}.get(
+        getattr(job, "verification_result", None),
+        "—",
+    )
+
+
+def retry_decision(job):
+    """Manual runs do not retry. Verification and a blocked channel do not retry either."""
+    if job_mode(job) == "MANUAL" or getattr(job, "trigger_source", None) == "manual":
+        return "NO"
+    if getattr(job, "verification_result", None) in {"failed", "blocked", "passed"}:
+        return "NO"
+    final = getattr(job, "final_status", None)
+    if final in {"VERIFICATION_FAILED", "BLOCKED", "MANAGEMENT_BLOCKED", "SUCCESS", "DUPLICATE_SKIPPED"}:
+        return "NO"
+    attempt = getattr(job, "attempt", None) or 0
+    if getattr(job, "retry_of_job_id", None) or attempt > 1:
+        return str(max(attempt - 1, 1))
+    if final == "EXECUTION_FAILED":
+        return "1"
+    return "NO"
+
+
+def execution_result_label(job):
+    """The remediation command, separate from the post-check."""
+    kind = getattr(job, "verification_result", None)
+    if kind in {"passed", "failed"}:
+        return "SUCCESS"
+    if kind == "blocked":
+        return "NOT_RUN"
+    if kind == "skipped" and getattr(job, "status", None) == "failed":
+        return "FAILED"
+    return "—"
+
+
 def verification_label(job):
     return VERIFICATION_LABELS.get(getattr(job, "verification_result", None))
 
 
 def verification_summary(job):
     return VERIFICATION_SUMMARIES.get(getattr(job, "verification_result", None))
+
+
+def _trigger_token(value):
+    text = str(value or "").strip().lower()
+    labels = {"auto": "AUTO", "manual": "MANUAL", "system": "SYSTEM", "remediation": "MANUAL"}
+    if not text:
+        return "—"
+    return labels.get(text, text.upper())
+
+
+def audit_facts(entry):
+    """Target, action, trigger, result, and reason stored on an audit row."""
+    raw = getattr(entry, "details_json", None) or ""
+    try:
+        data = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    reason = data.get("message") or data.get("reason") or "—"
+    final_status = data.get("final_status") or data.get("result") or "—"
+    return {
+        "target": data.get("target") or "—",
+        "action": data.get("action") or data.get("action_key") or getattr(entry, "action", "—"),
+        "trigger": _trigger_token(data.get("trigger") or data.get("trigger_source")),
+        "result": data.get("result") or "—",
+        "actor": data.get("actor") or (getattr(getattr(entry, "user", None), "username", None) or "SYSTEM"),
+        "role": data.get("role") or (getattr(getattr(entry, "user", None), "role", None) or "SYSTEM"),
+        "reason": reason,
+        "mode": data.get("mode") or _trigger_token(data.get("trigger") or data.get("trigger_source")),
+        "service": data.get("service") or "—",
+        "incident_id": data.get("incident_id") if data.get("incident_id") not in (None, "") else "—",
+        "job_id": data.get("job_id")
+        or (getattr(entry, "resource_id", None) if getattr(entry, "resource_type", None) == "automation_job" else "—"),
+        "final_status": final_status,
+        "triggered_by": data.get("triggered_by") or data.get("actor") or "—",
+        "execution_result": data.get("execution_result") or ("NOT_RUN" if final_status == "DUPLICATE_SKIPPED" else "—"),
+        "verification_result": data.get("verification_result") or ("NOT_RUN" if final_status == "DUPLICATE_SKIPPED" else "—"),
+    }
 
 
 def audit_message(entry):

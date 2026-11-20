@@ -1,0 +1,10 @@
+.venv
+.git
+.cursor
+graphify-out
+**/__pycache__
+**/*.pyc
+instance/*.db
+.env
+terminals
+agent-transcripts

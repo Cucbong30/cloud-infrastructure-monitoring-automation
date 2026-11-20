@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Forbidden · Operations Portal{% endblock %}
 {% block content %}
-<h1 class="h3">Forbidden</h1>
-<p>Your role cannot perform that action.</p>
+<h1 class="h3">403 Forbidden</h1>
+{% if current_user.is_authenticated %}
+  <p>Permission denied for {{ current_user.role|capitalize }} role</p>
+{% else %}
+  <p>Your role cannot perform that action.</p>
+{% endif %}
 {% endblock %}

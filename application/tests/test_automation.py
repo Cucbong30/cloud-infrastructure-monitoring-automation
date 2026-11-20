@@ -174,6 +174,118 @@ def test_ansible_runs_only_the_allow_listed_playbook(seeded, monkeypatch):
     assert calls["user"] == "lab"
 
 
+def test_playbook_uses_inventory_and_ignores_a_missing_controller_key(monkeypatch, tmp_path):
+    import subprocess
+
+    from app.executors.ansible import run_controller_playbook
+
+    captured = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr("app.executors.ansible.subprocess.run", fake_run)
+    result = run_controller_playbook(
+        user="bong",
+        host="192.168.10.10",
+        key_file="/home/bong/.ssh/id_ed25519",
+        playbook="~/ansible/playbooks/restart-nginx.yml",
+        timeout=30,
+    )
+    assert result.success is True
+    command = captured["command"]
+    assert "/home/bong/.ssh/id_ed25519" not in command
+    assert command[command.index("ansible-playbook") :] == [
+        "ansible-playbook",
+        "-i",
+        "/etc/ansible/hosts",
+        "~/ansible/playbooks/restart-nginx.yml",
+    ]
+    key = tmp_path / "controller_ed25519"
+    key.write_text("not-a-real-key", encoding="utf-8")
+    run_controller_playbook(
+        user="bong",
+        host="192.168.10.10",
+        key_file=str(key),
+        playbook="~/ansible/playbooks/restart-nginx.yml",
+        timeout=30,
+    )
+    local = captured["command"]
+    user_at = local.index("bong@192.168.10.10")
+    assert local[user_at - 2 : user_at] == ["-i", str(key)]
+    assert "azure01_ed25519" not in local
+    assert "/home/bong/.ssh/id_ed25519" not in local
+
+
+def test_wait_task_failure_is_verification_for_every_target():
+    from app.executors.ansible import playbook_failure_stage
+
+    samples = (
+        """TASK [Start app01-web container] ***
+changed: [APP01]
+
+TASK [Wait for application port 8080] ***
+FAILED - RETRYING: [APP01]: Wait for application port 8080 (1 retries left).
+fatal: [APP01]: FAILED! => {"msg": "Timeout when waiting for 192.168.10.12:8080"}
+""",
+        """TASK [Start app01-web container] ***
+changed: [APP01]
+
+TASK [Wait for application port 8080] ***
+fatal: [APP01 -> localhost]: FAILED! => {"changed": false, "elapsed": 15, "msg": "Timeout when waiting for 192.168.10.12:8080"}
+""",
+        """TASK [restart nginx] ***
+changed: [web01]
+
+TASK [Wait for Nginx port 80] ***
+fatal: [web01]: FAILED! => {"msg": "Timeout"}
+""",
+        """TASK [restart windows_exporter] ***
+changed: [win01]
+
+TASK [Wait for Windows Exporter port 9182] ***
+fatal: [win01]: FAILED! => {"msg": "Timeout"}
+""",
+        """TASK [Restart nginx service] ***
+changed: [AZURE01]
+
+TASK [Wait for nginx port 80] ***
+fatal: [AZURE01 -> localhost]: FAILED! => {"msg": "Timeout when waiting for 20.243.24.91:80"}
+""",
+    )
+    for text in samples:
+        stage, task_name = playbook_failure_stage(text)
+        assert stage == "verification_failed"
+        assert task_name.startswith("Wait")
+    stage, task_name = playbook_failure_stage(
+        """TASK [Start app01-web container] ***
+fatal: [APP01]: FAILED! => {"msg": "Error response from daemon"}
+"""
+    )
+    assert stage == "execution_failed"
+    assert task_name == "Start app01-web container"
+    stage, _task_name = playbook_failure_stage(
+        """TASK [restart nginx] ***
+fatal: [web01]: FAILED! => {"msg": "Could not restart service"}
+"""
+    )
+    assert stage == "execution_failed"
+    stage, _task_name = playbook_failure_stage(
+        """TASK [restart windows_exporter] ***
+fatal: [win01]: FAILED! => {"msg": "Could not restart service"}
+"""
+    )
+    assert stage == "execution_failed"
+    stage, task_name = playbook_failure_stage(
+        """TASK [Restart nginx service] ***
+fatal: [AZURE01]: FAILED! => {"msg": "nginx: configuration file /etc/nginx/nginx.conf test failed"}
+"""
+    )
+    assert stage == "execution_failed"
+    assert task_name == "Restart nginx service"
+
+
 def test_ansible_failure_and_executor_crash_stay_on_the_job(seeded, monkeypatch):
     def fake_run(**kwargs):
         return ExecutionResult(False, 4, "WEB01 unreachable", utcnow(), utcnow())
@@ -437,8 +549,10 @@ def test_exit_zero_without_recovery_is_verification_failed(seeded):
         assert finished.exit_code == 0
         assert finished.status == "failed"
         assert finished.verification_result == "failed"
-        audit = db.session.scalar(select(AuditLog).where(AuditLog.action == "remediation.failed"))
+        audit = db.session.scalar(select(AuditLog).where(AuditLog.action == "remediation.verification_failed"))
         assert audit is not None
+        assert "post-check on port 80 failed" in audit.details_json
+        assert "No retry was performed" in audit.details_json
 
 
 def test_management_block_does_not_call_the_playbook(seeded):
@@ -503,6 +617,9 @@ def test_retry_creates_a_new_job(seeded, client):
         assert old.status == "failed"
         assert new.id != old.id
         assert new.retry_of_job_id == old.id
+        assert b"Final status" in page.data
+        assert b"Target" in page.data
+        assert b"VERIFICATION_FAILED" in page.data
         assert b"Verification failed" in page.data
         assert b"The action finished, but the service was still down." in page.data
         assert b"Retry creates a new job" in page.data

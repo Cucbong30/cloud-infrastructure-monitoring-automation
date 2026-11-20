@@ -19,6 +19,8 @@ class User(UserMixin, db.Model):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    entra_oid: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -49,6 +51,7 @@ class Server(db.Model):
     hostname: Mapped[str] = mapped_column(String(255), nullable=False)
     ip_address: Mapped[str] = mapped_column(String(45), nullable=False)
     environment: Mapped[str] = mapped_column(String(40), nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False, default="vmware")
     os_type: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="unknown")
     monitoring_target: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -105,7 +108,7 @@ class AutomationJob(db.Model):
     __tablename__ = "automation_jobs"
     __table_args__ = (
         CheckConstraint(
-            "trigger_source IN ('manual', 'remediation', 'system')",
+            "trigger_source IN ('manual', 'remediation', 'system', 'auto')",
             name="ck_automation_jobs_trigger_source",
         ),
         CheckConstraint(
@@ -147,6 +150,17 @@ class AutomationJob(db.Model):
     verification_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     block_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_of_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    incident_id: Mapped[int | None] = mapped_column(
+        ForeignKey("incidents.id", ondelete="SET NULL", name="fk_automation_jobs_incident_id"),
+        nullable=True,
+    )
+    attempt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    final_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    triggered_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    user_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
@@ -154,6 +168,32 @@ class AutomationJob(db.Model):
     server: Mapped[Server | None] = relationship(back_populates="jobs")
     alert: Mapped[Alert | None] = relationship(back_populates="jobs")
     requester: Mapped[User | None] = relationship(foreign_keys=[requested_by])
+    incident: Mapped["Incident | None"] = relationship(back_populates="jobs")
+
+
+class Incident(db.Model):
+    """One outage. Retry and block flags belong to this row, not to the target forever."""
+
+    __tablename__ = "incidents"
+    __table_args__ = (
+        CheckConstraint("status IN ('open', 'resolved')", name="ck_incidents_status"),
+        Index("ix_incidents_server_action", "server_id", "action_key", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    server_id: Mapped[int] = mapped_column(ForeignKey("servers.id"), nullable=False)
+    alert_id: Mapped[int | None] = mapped_column(ForeignKey("alerts.id"), nullable=True)
+    action_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    manual_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    verification_failed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    blocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reason: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    jobs: Mapped[list[AutomationJob]] = relationship(back_populates="incident")
 
 
 class AuditLog(db.Model):

@@ -10,7 +10,21 @@ from app.models import AuditLog, utcnow
 def record(action, resource_type, resource_id=None, details=None, user_id=None, *, system=False):
     if not system and user_id is None and has_request_context() and current_user.is_authenticated:
         user_id = current_user.id
-    payload = json.dumps(details or {}, default=str, sort_keys=True)
+    payload_data = dict(details or {}) if isinstance(details, dict) else {}
+    actor_name = "SYSTEM"
+    role_name = "SYSTEM"
+    if user_id is not None:
+        from app.models import User
+
+        actor = db.session.get(User, user_id)
+        if actor is not None:
+            actor_name = actor.username
+            role_name = actor.role
+    payload_data.setdefault("actor", actor_name)
+    payload_data.setdefault("role", role_name)
+    if "trigger" not in payload_data and payload_data.get("trigger_source"):
+        payload_data["trigger"] = payload_data["trigger_source"]
+    payload = json.dumps(payload_data, default=str, sort_keys=True)
     if len(payload) > 4000:
         payload = payload[:4000]
     ip_address = None
@@ -27,4 +41,12 @@ def record(action, resource_type, resource_id=None, details=None, user_id=None, 
     )
     db.session.add(entry)
     db.session.commit()
+    try:
+        from app.services.notify import notify_audit
+
+        notify_audit(action, payload_data)
+    except Exception:
+        from flask import current_app
+
+        current_app.logger.exception("Alert notification was not sent")
     return entry

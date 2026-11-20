@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template
 from sqlalchemy import select
 
+from app.authz import roles_required
 from app.extensions import db
 from app.models import AuditLog
 
@@ -8,6 +9,7 @@ bp = Blueprint("audit", __name__, url_prefix="/audit")
 
 
 @bp.get("/")
+@roles_required("admin", "operator")
 def index():
     entries = db.session.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(100)).all()
     return render_template("audit/list.html", entries=entries)

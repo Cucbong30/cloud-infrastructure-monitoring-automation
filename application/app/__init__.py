@@ -7,18 +7,33 @@ from sqlalchemy import text
 
 from app.config import ROOT, build_config
 from app.extensions import csrf, db, login_manager, migrate
+from app.executors.actions import action_risk
 from app.presentation import (
+    audit_facts,
     audit_message,
     badge_class,
     format_clock,
+    execution_result_label,
     job_duration_seconds,
+    job_mode,
     job_outcome_label,
     job_status_label,
+    retry_decision,
+    trigger_label,
     verification_label,
+    verification_stage,
     verification_summary,
 )
 
-PUBLIC_ENDPOINTS = {"healthz", "auth.login", "static", "index", "webhooks.alertmanager"}
+PUBLIC_ENDPOINTS = {
+    "healthz",
+    "auth.login",
+    "auth.microsoft",
+    "auth.callback",
+    "static",
+    "index",
+    "webhooks.alertmanager",
+}
 
 
 def create_app(test_config=None):
@@ -49,6 +64,10 @@ def create_app(test_config=None):
     register_blueprints(app)
     register_cli(app)
 
+    from app.services.liveboard import start_live_board
+
+    start_live_board(app)
+
     @app.get("/healthz")
     def healthz():
         try:
@@ -66,6 +85,19 @@ def create_app(test_config=None):
         return redirect(url_for("auth.login"))
 
     @app.before_request
+    def sync_lab_inventory():
+        if app.config.get("_INVENTORY_SYNCED"):
+            return None
+        app.config["_INVENTORY_SYNCED"] = True
+        try:
+            from app.services.inventory_sync import sync_inventory
+
+            sync_inventory()
+        except Exception:
+            db.session.rollback()
+        return None
+
+    @app.before_request
     def require_login():
         if request.endpoint in PUBLIC_ENDPOINTS or request.endpoint is None:
             return None
@@ -80,14 +112,22 @@ def create_app(test_config=None):
     @app.context_processor
     def inject_ui():
         return {
+            "action_risk": action_risk,
+            "audit_facts": audit_facts,
             "audit_message": audit_message,
             "badge_class": badge_class,
             "grafana_url": app.config.get("GRAFANA_BASE_URL", ""),
             "job_status_label": job_status_label,
             "job_outcome_label": job_outcome_label,
+            "execution_result_label": execution_result_label,
             "job_duration_seconds": job_duration_seconds,
+            "trigger_label": trigger_label,
             "verification_label": verification_label,
             "verification_summary": verification_summary,
+            "verification_stage": verification_stage,
+            "retry_decision": retry_decision,
+            "job_mode": job_mode,
+            "auto_remediation_enabled": app.config.get("AUTO_REMEDIATION_ENABLED", False),
             "automation_executor": app.config.get("AUTOMATION_EXECUTOR", "mock"),
         }
 

@@ -9,7 +9,7 @@ from app.presentation import job_outcome_label
 from app.services.audit import record
 from app.services.automation import AutomationRejected, RemediationUnavailable, queue_and_dispatch
 from app.services.checks import management_block
-from app.services.remediation import blocked_reason, suggest_remediation
+from app.services.remediation import alert_auto_notice, blocked_reason, suggest_remediation
 
 bp = Blueprint("alerts", __name__, url_prefix="/alerts")
 
@@ -39,6 +39,7 @@ def index():
         if server.id not in server_blocks:
             server_blocks[server.id] = management_block(server)
         blocked[alert.id] = server_blocks[server.id] if suggestions.get(alert.id) else None
+    notices = {alert.id: alert_auto_notice(alert) for alert in alerts}
     return render_template(
         "alerts/list.html",
         alerts=alerts,
@@ -46,6 +47,7 @@ def index():
         status=status,
         suggestions=suggestions,
         blocked=blocked,
+        notices=notices,
     )
 
 
@@ -93,7 +95,7 @@ def remediate(alert_id):
             parameters=suggestion["parameters"],
             actor=current_user,
             alert_id=alert.id,
-            trigger_source="remediation",
+            trigger_source="manual",
         )
     except RemediationUnavailable as exc:
         flash(exc.reason, "warning")

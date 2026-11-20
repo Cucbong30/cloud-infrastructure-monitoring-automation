@@ -36,6 +36,15 @@ def app(tmp_path, monkeypatch):
             "PROBE_TIMEOUT_SECONDS": 0.2,
             "JOB_OUTPUT_MAX_CHARS": 4000,
             "SESSION_COOKIE_SECURE": False,
+            "NOTIFY_ENABLED": False,
+            "GRAPH_SENDER_MAILBOX": "",
+            "GRAPH_MAIL_SENDER": "",
+            "ALERT_RECIPIENTS": "",
+            "NOTIFY_RECIPIENTS": "",
+            "ALERT_RECIPIENT_CRITICAL": "",
+            "ALERT_RECIPIENT_WARNING": "",
+            "ALERT_RECIPIENT_INFO": "",
+            "ENTRA_CLIENT_SECRET": "",
         }
     )
     with application.app_context():

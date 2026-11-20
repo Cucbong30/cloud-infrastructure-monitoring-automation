@@ -113,6 +113,9 @@ INVENTORY_STATUS = {"Healthy": "online", "Degraded": "warning", "Unreachable": "
 
 
 def collect_metrics(probe_http=None, probe_tcp=None):
+    from app.services.inventory import azure_settings, refresh_cloud_target
+
+    refresh_cloud_target()
     probe_http = http_probe if probe_http is None else probe_http
     probe_tcp = tcp_probe if probe_tcp is None else probe_tcp
     values = {name: "N/A" for name in CLUSTER_QUERIES}
@@ -159,6 +162,8 @@ def _blank_host(name):
             {"name": item["name"], "short": item["short"], "status": "DOWN", "latency_ms": None}
             for item in check["services"]
         ],
+        "environment": {"local": "Local", "cloud": "Cloud"}.get(spec.get("environment"), spec.get("environment") or "—"),
+        "provider": {"vmware": "VMware", "azure": "Azure"}.get(spec.get("provider"), spec.get("provider") or "—"),
     }
 
 
@@ -173,6 +178,12 @@ def _collect_host(name, spec, client, prometheus_available, probe_http, probe_tc
     row["exporter"] = "UP" if exporter_up else "DOWN"
 
     jobs = []
+    if name == "AZURE01":
+        from app.services.inventory import azure_settings
+
+        if not azure_settings()["configured"]:
+            row["note"] = "Set AZURE01_IP before this cloud target can be monitored."
+            return row
     for item in check["services"]:
         jobs.append((item, probe_http, probe_tcp, timeout))
     results = _run_probes(jobs)
@@ -242,6 +253,14 @@ def _apply_live_status(hosts):
             continue
         server = db.session.scalar(select(Server).where(Server.name == host["name"]))
         if server is None:
+            host["maintenance"] = False
+            continue
+        host["maintenance"] = server.status == "maintenance"
+        if server.status == "maintenance":
+            if mapped in {"online", "warning"}:
+                server.last_seen_at = now
+            host["server_id"] = server.id
+            host["last_seen_at"] = server.last_seen_at
             continue
         server.status = mapped
         if mapped in {"online", "warning"}:
