@@ -28,7 +28,7 @@ Báo cáo: [week-09-application.md](week-09-application.md). Bản Word: [week-0
 | Code tuần 9 | [b95ad44](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/b95ad447b07e58401e4296b4bd67a15852064998) | cùng link |
 | Code tuần 8 | [4960f04](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/4960f041ed12294b595016e993720ba209fd6bf8) | cùng link |
 | Báo cáo tuần 8 | [week08](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/e3ad3935a71b701b96f455ffb83121fc7e619497/application/docs/week08) | [e3ad393](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/e3ad3935a71b701b96f455ffb83121fc7e619497) |
-| Ảnh và báo cáo tuần 9 | [week09](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/__DOCS_SHA__/application/docs/week09) | [__DOCS_SHA__](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/__DOCS_SHA__) |
+| Ảnh và báo cáo tuần 9 | [week09](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/tree/919ceaa47a0a65662785aab9782dd148b942f4a2/application/docs/week09) | [919ceaa47a0a65662785aab9782dd148b942f4a2](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/919ceaa47a0a65662785aab9782dd148b942f4a2) |
 
 ## Ảnh
 
