@@ -16,7 +16,8 @@
           <a class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}" href="{{ url_for('dashboard.index') }}">Dashboard</a>
           <a class="nav-link {% if request.endpoint and request.endpoint.startswith('servers.') %}active{% endif %}" href="{{ url_for('servers.index') }}">Servers</a>
           <a class="nav-link {% if request.endpoint and request.endpoint.startswith('alerts.') %}active{% endif %}" href="{{ url_for('alerts.index') }}">Alerts</a>
-          <a class="nav-link {% if request.endpoint and request.endpoint.startswith('automation.') %}active{% endif %}" href="{{ url_for('automation.index') }}">Jobs</a>
+          <a class="nav-link {% if request.endpoint and request.endpoint.startswith('automation.') and request.endpoint not in ['automation.approvals', 'automation.approval_detail'] %}active{% endif %}" href="{{ url_for('automation.index') }}">Jobs</a>
+          <a class="nav-link {% if request.endpoint in ['automation.approvals', 'automation.approval_detail'] %}active{% endif %}" href="{{ url_for('automation.approvals') }}">Approvals</a>
           {% if current_user.role in ['admin', 'operator'] %}
           <a class="nav-link {% if request.endpoint and request.endpoint.startswith('audit.') %}active{% endif %}" href="{{ url_for('audit.index') }}">Audit Log</a>
           {% endif %}

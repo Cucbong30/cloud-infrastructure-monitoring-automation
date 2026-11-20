@@ -83,6 +83,12 @@ a { color: var(--blue); }
   --bs-table-hover-bg: #1a2740;
   --bs-table-hover-color: var(--text);
 }
+.approval-row { cursor: pointer; }
+.table a.approval-open {
+  color: #93c5fd;
+  font-weight: 700;
+  text-decoration: underline;
+}
 .table thead th {
   color: var(--muted);
   font-weight: 700;
@@ -263,6 +269,21 @@ a { color: var(--blue); }
 .log-extra a { color: #93c5fd; }
 
 .badge.text-bg-light { color: #212529; border: 1px solid #dee2e6; }
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 6.5rem;
+  margin-top: 0.15rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.55rem;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+.risk-low { background: #166534; color: #ecfdf5; }
+.risk-medium { background: #c2410c; color: #fff7ed; }
+.risk-high { background: #9f1239; color: #fff1f2; }
 .metric-value { font-size: 1.5rem; font-weight: 600; }
 pre.output { white-space: pre-wrap; max-height: 8rem; margin-bottom: 0; }
 

@@ -196,6 +196,71 @@ class Incident(db.Model):
     jobs: Mapped[list[AutomationJob]] = relationship(back_populates="incident")
 
 
+class ApprovalRequest(db.Model):
+    """A MEDIUM or HIGH action waits here. No execution job exists until it is approved."""
+
+    __tablename__ = "approval_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'APPROVAL_EXPIRED')",
+            name="ck_approval_requests_status",
+        ),
+        CheckConstraint("risk IN ('MEDIUM', 'HIGH')", name="ck_approval_requests_risk"),
+        Index("ix_approval_requests_status", "status"),
+        Index("ix_approval_requests_server_id", "server_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    server_id: Mapped[int | None] = mapped_column(
+        ForeignKey("servers.id", ondelete="SET NULL", name="fk_approval_requests_server_id"),
+        nullable=True,
+    )
+    alert_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alerts.id", ondelete="SET NULL", name="fk_approval_requests_alert_id"),
+        nullable=True,
+    )
+    job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("automation_jobs.id", ondelete="SET NULL", name="fk_approval_requests_job_id"),
+        nullable=True,
+    )
+    incident_id: Mapped[int | None] = mapped_column(
+        ForeignKey("incidents.id", ondelete="SET NULL", name="fk_approval_requests_incident_id"),
+        nullable=True,
+    )
+    requester_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL", name="fk_approval_requests_requester_id"),
+        nullable=True,
+    )
+    approver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL", name="fk_approval_requests_approver_id"),
+        nullable=True,
+    )
+    action_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    service: Mapped[str] = mapped_column(String(40), nullable=False)
+    risk: Mapped[str] = mapped_column(String(10), nullable=False)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False, default="MANUAL", server_default="MANUAL")
+    parameters_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING_APPROVAL")
+    requester_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    requester_role: Mapped[str] = mapped_column(String(20), nullable=False)
+    approver_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    approver_role: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    execution_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    verification_result: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    final_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    server: Mapped[Server | None] = relationship(foreign_keys=[server_id])
+    requester: Mapped[User | None] = relationship(foreign_keys=[requester_id])
+    approver: Mapped[User | None] = relationship(foreign_keys=[approver_id])
+    job: Mapped[AutomationJob | None] = relationship(foreign_keys=[job_id])
+
+
 class AuditLog(db.Model):
     __tablename__ = "audit_logs"
     __table_args__ = (

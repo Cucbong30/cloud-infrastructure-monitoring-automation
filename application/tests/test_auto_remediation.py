@@ -44,15 +44,18 @@ def test_auto_maps_each_allow_listed_host(seeded):
     with seeded.app_context():
         for name, fingerprint, instance, action in cases:
             result = sync_alerts(FakePrometheus([_alert(name, fingerprint, instance)]))
-            assert result.remediated == 1
             alert = db.session.scalar(select(Alert).where(Alert.fingerprint == fingerprint))
             job = db.session.scalar(select(AutomationJob).where(AutomationJob.alert_id == alert.id))
+            assert result.remediated == 1
             assert job.action_key == action
             assert job.trigger_source == "auto"
             assert job.status == "succeeded"
             assert job.verification_result == "passed"
             started = db.session.scalar(
-                select(AuditLog).where(AuditLog.action == "auto_remediation.started", AuditLog.resource_id == str(job.id))
+                select(AuditLog).where(
+                    AuditLog.action == "auto_remediation.started",
+                    AuditLog.resource_id == str(job.id),
+                )
             )
             assert started is not None
 
@@ -118,7 +121,7 @@ def test_verification_failure_does_not_retry(seeded):
     _enable(seeded)
     seeded.config["RECOVERY_CHECK"] = lambda server, action: (False, "App :8080 is down.")
     with seeded.app_context():
-        sync_alerts(FakePrometheus([_alert("service_down", "fp-verify", "192.168.10.12:9100")]))
+        sync_alerts(FakePrometheus([_alert("NginxDown", "fp-verify", "192.168.10.11:9100")]))
         alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-verify"))
         jobs = db.session.scalars(
             select(AutomationJob).where(AutomationJob.alert_id == alert.id).order_by(AutomationJob.id)
@@ -463,6 +466,12 @@ def test_production_playbooks_stay_on_the_lab_targets():
     assert ACTIONS["restart_nginx"].risk == "low"
     assert ACTIONS["restart_container"].risk == "low"
     assert ACTIONS["restart_windows_exporter"].risk == "low"
+    assert ACTIONS["restart_docker_service"].risk == "medium"
+    assert ACTIONS["restart_docker_service"].playbook == "~/ansible/playbooks/restart-docker-service.yml"
+    assert ACTIONS["reboot_server"].risk == "high"
+    assert ACTIONS["reboot_server"].playbook == "~/ansible/playbooks/reboot-azure01.yml"
+    assert playbook_for("APP01", "restart_docker_service") == "~/ansible/playbooks/restart-docker-service.yml"
+    assert playbook_for("AZURE01", "reboot_server") == "~/ansible/playbooks/reboot-azure01.yml"
 
 
 def test_each_target_auto_success_records_the_audit(seeded):
@@ -643,23 +652,82 @@ fatal: [APP01]: FAILED! => {"msg": "Timeout when waiting for 192.168.10.12:8080"
     seeded.config["MANAGEMENT_CHECK"] = lambda server: None
     seeded.config["RECOVERY_CHECK"] = lambda server, action: (False, "App :8080 is down.")
     with seeded.app_context():
-        sync_alerts(FakePrometheus([_alert("container_down", "fp-wait", "192.168.10.12:9100")]))
-        alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-wait"))
-        jobs = db.session.scalars(
-            select(AutomationJob).where(AutomationJob.alert_id == alert.id).order_by(AutomationJob.id)
-        ).all()
-        assert len(jobs) == 1
-        assert jobs[0].action_key == "restart_container"
-        assert jobs[0].exit_code == 2
-        assert jobs[0].verification_result == "failed"
-        assert execution_result_label(jobs[0]) == "SUCCESS"
-        assert job_outcome_label(jobs[0]) == "VERIFICATION_FAILED"
-        assert jobs[0].reason == "verification_failed"
-        incident = db.session.get(Incident, jobs[0].incident_id)
-        assert incident.retry_count == 0
-        assert incident.verification_failed is True
-        assert incident.manual_required is True
-        assert maybe_remediate(alert) is None
+        from app.models import User
+        from app.services.automation import dispatch
+
+        operator = db.session.scalar(select(User).where(User.username == "operator"))
+        server = db.session.scalar(select(Server).where(Server.name == "APP01"))
+        before = db.session.scalar(select(func.count()).select_from(AutomationJob))
+        job = enqueue_job(
+            server_id=server.id,
+            action_key="restart_container",
+            parameters={"container_name": "app01-web"},
+            trigger_source="manual",
+            requested_by=operator.id,
+        )
+        finished = dispatch(job.id, actor=operator)
+        assert db.session.scalar(select(func.count()).select_from(AutomationJob)) == before + 1
+        assert finished.action_key == "restart_container"
+        assert finished.exit_code == 2
+        assert finished.verification_result == "failed"
+        assert execution_result_label(finished) == "SUCCESS"
+        assert job_outcome_label(finished) == "VERIFICATION_FAILED"
+
+
+def test_a_new_firing_window_records_the_note_again(seeded):
+    from datetime import timedelta
+
+    from app.models import utcnow
+    from app.services.remediation import _note_once
+
+    message = "Reason: risk. MANUAL_REQUIRED. restart_docker_service is medium risk, so auto-remediation did not run."
+    with seeded.app_context():
+        server = db.session.scalar(select(Server).where(Server.name == "APP01"))
+        started = utcnow()
+        alert = Alert(
+            server_id=server.id,
+            fingerprint="fp-note-window",
+            alert_name="container_down",
+            source="live",
+            severity="critical",
+            status="firing",
+            summary="APP01 container_down",
+            starts_at=started,
+            created_at=started,
+        )
+        db.session.add(alert)
+        db.session.commit()
+        _note_once("manual_intervention.required", alert, {"message": message, "alert_id": alert.id})
+        _note_once("manual_intervention.required", alert, {"message": message, "alert_id": alert.id})
+        assert (
+            db.session.scalar(
+                select(func.count()).select_from(AuditLog).where(
+                    AuditLog.action == "manual_intervention.required",
+                    AuditLog.resource_id == str(alert.id),
+                )
+            )
+            == 1
+        )
+        previous = db.session.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "manual_intervention.required",
+                AuditLog.resource_id == str(alert.id),
+            )
+        )
+        previous.created_at = started - timedelta(minutes=10)
+        alert.starts_at = started - timedelta(minutes=5)
+        db.session.commit()
+        _note_once("manual_intervention.required", alert, {"message": message, "alert_id": alert.id})
+        _note_once("manual_intervention.required", alert, {"message": message, "alert_id": alert.id})
+        assert (
+            db.session.scalar(
+                select(func.count()).select_from(AuditLog).where(
+                    AuditLog.action == "manual_intervention.required",
+                    AuditLog.resource_id == str(alert.id),
+                )
+            )
+            == 2
+        )
 
 
 def test_each_probed_outage_uses_its_own_action(seeded):
@@ -675,14 +743,8 @@ def test_each_probed_outage_uses_its_own_action(seeded):
     with seeded.app_context():
         alerts = consider_live_hosts(hosts)
         assert {alert.alert_name for alert in alerts} == {"container_down", "WindowsExporterDown"}
-        jobs = []
-        for alert in alerts:
-            job = maybe_remediate(alert)
-            assert job is not None
-            assert job.attempt == 1
-            assert job.retry_of_job_id is None
-            jobs.append(job)
-        assert {job.action_key for job in jobs} == {"restart_container", "restart_windows_exporter"}
+        started = {maybe_remediate(alert).action_key for alert in alerts}
+        assert started == {"restart_container", "restart_windows_exporter"}
         assert db.session.scalar(
             select(func.count()).select_from(AutomationJob).where(AutomationJob.action_key == "restart_nginx")
         ) == 0

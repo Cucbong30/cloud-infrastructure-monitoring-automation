@@ -14,12 +14,23 @@ from app.services.checks import management_refusal, refuse_unreachable_managemen
 from app.presentation import format_clock
 from app.services.metrics import HOST_CHECKS
 
-LAB_ACTIONS = {
-    "WEB01": ("restart_nginx", {}, "Restart Nginx"),
-    "APP01": ("restart_container", {"container_name": "app01-web"}, "Restart container"),
-    "WIN01": ("restart_windows_exporter", {"service_name": "windows_exporter"}, "Restart Windows Exporter"),
-    "AZURE01": ("restart_nginx", {}, "Restart Nginx"),
+TARGET_ACTIONS = {
+    "WEB01": [("restart_nginx", {}, "Restart Nginx")],
+    "APP01": [
+        ("restart_container", {"container_name": "app01-web"}, "Restart container"),
+        ("restart_docker_service", {}, "Restart Docker"),
+    ],
+    "WIN01": [("restart_windows_exporter", {"service_name": "windows_exporter"}, "Restart Windows Exporter")],
+    "AZURE01": [
+        ("restart_nginx", {}, "Restart Nginx"),
+        ("reboot_server", {}, "Reboot server"),
+    ],
 }
+LAB_ACTIONS = {name: items[0] for name, items in TARGET_ACTIONS.items()}
+
+
+def actions_for(server_name):
+    return list(TARGET_ACTIONS.get((server_name or "").upper(), []))
 _AUTO_LOCK = threading.Lock()
 _AUTO_RUNNING = set()
 
@@ -135,13 +146,55 @@ def _action_is_running(server_id, action_key):
     )
 
 
-def trigger_manual_remediation(server, action_key, parameters, actor, alert_id=None):
-    """One operator click. Same checks as auto, and a manual run does not retry itself."""
+def _auto_actor():
+    class _Actor:
+        id = None
+        email = ""
+        username = "SYSTEM"
+        role = "SYSTEM"
+
+    return _Actor()
+
+
+def _deny_request(server, action_key, actor):
+    role = (getattr(actor, "role", None) or "unknown").capitalize()
+    record(
+        "permission.denied",
+        "approval_request",
+        None,
+        {
+            "message": f"Permission denied for {role} role",
+            "result": "DENIED",
+            "risk": action_risk(action_key).upper(),
+            "action": action_key,
+            "action_key": action_key,
+            "target": None if server is None else server.name,
+            "mode": "MANUAL",
+            "trigger": "manual",
+            "playbook_executed": False,
+            "execution_result": "NOT_RUN",
+            "verification_result": "NOT_RUN",
+        },
+        user_id=getattr(actor, "id", None),
+    )
+
+
+def trigger_manual_remediation(server, action_key, parameters, actor, alert_id=None, approval_request=None):
+    """One operator click. MEDIUM and HIGH stop until a permitted approver accepts."""
     from app.models import User
 
     if server is None or not getattr(server, "is_active", False):
         raise AutomationRejected("Server is not available.")
     actor_row = db.session.get(User, getattr(actor, "id", None)) if getattr(actor, "id", None) else None
+    from app.services.approval import ApprovalForbidden, can_request
+
+    if not can_request(actor_row or actor, action_key):
+        _deny_request(server, action_key, actor_row or actor)
+        raise ApprovalForbidden(f"Permission denied for {(getattr(actor_row or actor, 'role', None) or 'unknown').capitalize()} role")
+    if approval_request is None and action_risk(action_key) != "low":
+        from app.services.approval import ApprovalPending, open_request
+
+        raise ApprovalPending(open_request(server, action_key, parameters, actor_row or actor, alert_id))
     email = ((actor_row.email if actor_row is not None else None) or "").strip()
     triggered_by = email or (actor_row.username if actor_row is not None else "") or "unknown"
     role = None if actor_row is None else actor_row.role
@@ -411,6 +464,9 @@ def maybe_remediate(alert):
     action_key = suggestion["action_key"]
     risk = action_risk(action_key)
     if risk != "low":
+        from app.services.approval import open_request
+
+        open_request(server, action_key, suggestion["parameters"], _auto_actor(), alert.id)
         _note_manual(
             alert,
             action_key,
@@ -1227,7 +1283,10 @@ def _note_once(action, alert, details):
         .order_by(AuditLog.id.desc())
     )
     if previous is not None and _message(previous) == details.get("message"):
-        return previous
+        started = _aware(getattr(alert, "starts_at", None))
+        noted = _aware(previous.created_at)
+        if started is None or noted is None or noted >= started:
+            return previous
     return record(action, "alert", alert.id, details, system=True)
 
 

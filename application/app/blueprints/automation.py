@@ -3,11 +3,19 @@ from flask_login import current_user
 from sqlalchemy import select
 
 from app.authz import roles_required
-from app.executors.actions import ACTIONS, SERVICE_LABELS
+from app.executors.actions import ACTIONS, SERVICE_LABELS, action_risk
 from app.extensions import db
 from app.forms import JobForm
-from app.models import AuditLog, AutomationJob, Server
+from app.models import ApprovalRequest, AuditLog, AutomationJob, Server
 from app.presentation import job_outcome_label
+from app.services.approval import (
+    PENDING,
+    ApprovalForbidden,
+    ApprovalPending,
+    can_decide,
+    decide,
+    expire_pending,
+)
 from app.services.automation import (
     REJECTED_PARAMETER_KEYS,
     AutomationRejected,
@@ -15,7 +23,14 @@ from app.services.automation import (
     retry_job,
 )
 from app.services.checks import management_block, management_status
-from app.services.remediation import LAB_ACTIONS, blocked_reason, job_auto_context, trigger_manual_remediation
+from app.services.remediation import (
+    LAB_ACTIONS,
+    TARGET_ACTIONS,
+    actions_for,
+    blocked_reason,
+    job_auto_context,
+    trigger_manual_remediation,
+)
 from app.services.runbooks import runbook_for, runbook_page
 
 bp = Blueprint("automation", __name__, url_prefix="/automation")
@@ -69,6 +84,14 @@ def index():
         jobs=jobs,
         form=form,
         actions=ACTIONS,
+        action_risks={key: action_risk(key).upper() for key in ACTIONS},
+        target_actions={
+            name: [
+                {"service": SERVICE_LABELS.get(item[0], item[0]), "action": item[0]}
+                for item in items
+            ]
+            for name, items in TARGET_ACTIONS.items()
+        },
         unreachable_notices=notices,
         management_blocks=blocks,
     )
@@ -88,11 +111,11 @@ def create_job():
     server = db.session.get(Server, form.server_id.data)
     if action is None or server is None or form.mode.data != "MANUAL":
         abort(400)
-    allowed = LAB_ACTIONS.get((server.name or "").upper())
+    allowed = next((item for item in actions_for(server.name) if item[0] == action.key), None)
     expected_service = SERVICE_LABELS.get(action.key)
     posted_service = form.service.data or expected_service
     posted_mode = form.mode.data or "MANUAL"
-    if allowed is None or allowed[0] != action.key or posted_service != expected_service or posted_mode != "MANUAL":
+    if allowed is None or posted_service != expected_service or posted_mode != "MANUAL":
         flash("Choose the service and action that belong to this target.", "warning")
         return redirect(url_for("automation.index"))
     parameters = dict(allowed[1])
@@ -105,6 +128,14 @@ def create_job():
             parameters,
             current_user,
         )
+    except ApprovalPending as pending:
+        flash(
+            f"Approval request {pending.request.id} is PENDING_APPROVAL. The playbook was not started.",
+            "warning",
+        )
+        return redirect(url_for("automation.approval_detail", request_id=pending.request.id))
+    except ApprovalForbidden:
+        abort(403)
     except AutomationRejected:
         abort(400)
     flash(
@@ -139,6 +170,7 @@ def detail(job_id):
             )
             .order_by(AutomationJob.id.desc())
         )
+    approval = db.session.scalar(select(ApprovalRequest).where(ApprovalRequest.job_id == job.id))
     return render_template(
         "automation/detail.html",
         job=job,
@@ -147,6 +179,7 @@ def detail(job_id):
         auto=job_auto_context(job),
         runbook=runbook_for(job.action_key, job.final_status or job_outcome_label(job)),
         active_job=active_job,
+        approval=approval,
     )
 
 
@@ -163,6 +196,14 @@ def runbook(slug):
 def retry(job_id):
     try:
         job = retry_job(job_id, current_user)
+    except ApprovalPending as pending:
+        flash(
+            f"Approval request {pending.request.id} is PENDING_APPROVAL. The playbook was not started.",
+            "warning",
+        )
+        return redirect(url_for("automation.approval_detail", request_id=pending.request.id))
+    except ApprovalForbidden:
+        abort(403)
     except RemediationUnavailable as exc:
         flash(exc.reason, "warning")
         return redirect(url_for("automation.detail", job_id=job_id))
@@ -174,3 +215,63 @@ def retry(job_id):
         "success" if job.status == "succeeded" else "warning",
     )
     return redirect(url_for("automation.detail", job_id=job.id))
+
+
+@bp.get("/approvals")
+def approvals():
+    expire_pending()
+    rows = db.session.scalars(select(ApprovalRequest).order_by(ApprovalRequest.requested_at.desc()).limit(100)).all()
+    pending = [row for row in rows if row.status == PENDING]
+    history = [row for row in rows if row.status != PENDING]
+    return render_template(
+        "automation/approvals.html",
+        pending=pending,
+        history=history,
+        decidable={row.id for row in pending if can_decide(current_user, row)},
+    )
+
+
+@bp.get("/approvals/<int:request_id>")
+def approval_detail(request_id):
+    expire_pending()
+    approval = db.session.get(ApprovalRequest, request_id)
+    if approval is None:
+        abort(404)
+    audits = db.session.scalars(
+        select(AuditLog)
+        .where(AuditLog.resource_type == "approval_request", AuditLog.resource_id == str(approval.id))
+        .order_by(AuditLog.created_at.desc())
+    ).all()
+    return render_template(
+        "automation/approval_detail.html",
+        approval=approval,
+        audits=audits,
+        can_decide=can_decide(current_user, approval),
+    )
+
+
+@bp.post("/approvals/<int:request_id>/approve")
+@roles_required("admin")
+def approve_request(request_id):
+    return _decide(request_id, "APPROVED", "")
+
+
+@bp.post("/approvals/<int:request_id>/reject")
+@roles_required("admin")
+def reject_request(request_id):
+    return _decide(request_id, "REJECTED", (request.form.get("reason") or "").strip())
+
+
+def _decide(request_id, decision, reason):
+    if decision == "REJECTED" and not reason:
+        flash("A reject reason is required.", "warning")
+        return redirect(url_for("automation.approval_detail", request_id=request_id))
+    try:
+        approval = decide(request_id, current_user, decision, reason)
+    except ApprovalForbidden:
+        abort(403)
+    if approval.status == "APPROVED" and approval.job_id:
+        flash(f"Approved. Job {approval.job_id} finished with status {approval.final_status}.", "success")
+        return redirect(url_for("automation.detail", job_id=approval.job_id))
+    flash(f"Approval request {approval.id} is {approval.status}. The playbook was not started.", "warning")
+    return redirect(url_for("automation.approval_detail", request_id=approval.id))

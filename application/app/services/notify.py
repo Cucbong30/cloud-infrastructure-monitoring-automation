@@ -30,6 +30,10 @@ EVENT_TITLES = {
     "degraded": "Degraded",
     "resolved": "Resolved",
     "healthy": "Healthy",
+    "approval_requested": "Approval Requested",
+    "approval_approved": "Approval Approved",
+    "approval_rejected": "Approval Rejected",
+    "approval_expired": "Approval Expired",
 }
 
 SEVERITY = {
@@ -44,6 +48,10 @@ SEVERITY = {
     "remediation_success": "info",
     "resolved": "info",
     "healthy": "info",
+    "approval_requested": "warning",
+    "approval_approved": "info",
+    "approval_rejected": "warning",
+    "approval_expired": "warning",
 }
 
 _ACTION_EVENTS = {
@@ -61,12 +69,18 @@ _ACTION_EVENTS = {
     "auto_remediation.blocked": "blocked",
     "remediation.blocked": "blocked",
     "incident.resolved": "resolved",
+    "approval.requested": "approval_requested",
+    "approval.approved": "approval_approved",
+    "approval.rejected": "approval_rejected",
+    "approval.expired": "approval_expired",
 }
 
 _SERVICES = {
     "restart_nginx": "Nginx",
     "restart_container": "App",
     "restart_windows_exporter": "Windows Exporter",
+    "restart_docker_service": "Docker",
+    "reboot_server": "Host",
 }
 
 
@@ -134,6 +148,31 @@ def mail_ready(settings=None):
     return graph_ready(settings) or smtp_ready(settings)
 
 
+def _admin_emails():
+    from sqlalchemy import select
+
+    from app.extensions import db
+    from app.models import User
+
+    found = []
+    rows = db.session.scalars(select(User).where(User.role == "admin", User.is_active.is_(True))).all()
+    for user in rows:
+        email = (user.email or "").strip()
+        if "@" in email and email not in found:
+            found.append(email)
+    return found
+
+
+def _approval_recipients(event, details):
+    """Approval mail goes to admins or the requester. Execution mail keeps the severity lists."""
+    if event == "approval_requested":
+        return _admin_emails()
+    if event in {"approval_approved", "approval_rejected", "approval_expired"}:
+        email = (details.get("requester_email") or details.get("requester") or "").strip()
+        return [email] if "@" in email else []
+    return None
+
+
 def notify_audit(action, details):
     event = _ACTION_EVENTS.get(action)
     if event is None or not isinstance(details, dict):
@@ -153,6 +192,11 @@ def notify_audit(action, details):
         user_role=details.get("user_role") or details.get("role") or "",
         execution_result=details.get("execution_result") or "",
         verification_result=details.get("verification_result") or "",
+        risk=details.get("risk") or "",
+        decision=details.get("decision") or "",
+        request_id=details.get("request_id") or "",
+        request_url=details.get("request_url") or "",
+        recipients=_approval_recipients(event, details),
     )
 
 
@@ -170,12 +214,20 @@ def send_alert_email(
     user_role="",
     execution_result="",
     verification_result="",
+    risk="",
+    decision="",
+    request_id="",
+    request_url="",
+    recipients=None,
 ):
     """Send one alert. Graph 202 Accepted means the send was accepted."""
     if event_type not in EVENT_TITLES:
         return False
     settings = mail_settings()
-    recipients = recipients_for(event_type, settings)
+    if recipients is None:
+        recipients = recipients_for(event_type, settings)
+    else:
+        recipients = [item for item in recipients if item]
     if not recipients:
         return False
     fields = {
@@ -193,6 +245,10 @@ def send_alert_email(
         "user_role": user_role or "",
         "execution_result": execution_result or "",
         "verification_result": verification_result or "",
+        "risk": risk or "",
+        "decision": decision or "",
+        "request_id": request_id or "",
+        "request_url": request_url or "",
     }
     transport = current_app.config.get("NOTIFY_TRANSPORT")
     if transport is not None:
@@ -257,6 +313,10 @@ _SUMMARIES = {
     "degraded": "The target is degraded and needs attention.",
     "resolved": "The incident is resolved and the service is healthy.",
     "healthy": "The service is running normally.",
+    "approval_requested": "A remediation action is waiting for approval. The playbook has not started.",
+    "approval_approved": "The approval was granted and remediation can start.",
+    "approval_rejected": "The approval was rejected. The playbook was not started.",
+    "approval_expired": "The approval request expired. It was not approved automatically.",
 }
 
 _THEMES = {
@@ -328,6 +388,30 @@ _TIMELINES = {
         ("Verified", "ok", False),
         ("Service Healthy", "ok", True),
     ),
+    "approval_requested": (
+        ("Requested", "warn", True),
+        ("Pending", "wait", False),
+        ("Decision", "wait", False),
+        ("Execute", "wait", False),
+    ),
+    "approval_approved": (
+        ("Requested", "run", False),
+        ("Approved", "ok", True),
+        ("Execute", "wait", False),
+        ("Verify", "wait", False),
+    ),
+    "approval_rejected": (
+        ("Requested", "run", False),
+        ("Rejected", "bad", True),
+        ("No Execution", "wait", False),
+        ("Closed", "wait", False),
+    ),
+    "approval_expired": (
+        ("Requested", "run", False),
+        ("Expired", "warn", True),
+        ("No Execution", "wait", False),
+        ("Closed", "wait", False),
+    ),
     "execution_failed": (
         ("Service Down", "bad", False),
         ("Remediation Started", "run", False),
@@ -368,6 +452,10 @@ _STATUS_BADGES = {
     "EXECUTION_FAILED": ("Execution Failed", "bad"),
     "MANUAL_REQUIRED": ("Manual Required", "bad"),
     "BLOCKED": ("Blocked", "warn"),
+    "PENDING_APPROVAL": ("Pending Approval", "warn"),
+    "APPROVED": ("Approved", "ok"),
+    "REJECTED": ("Rejected", "bad"),
+    "APPROVAL_EXPIRED": ("Approval Expired", "warn"),
     "MANAGEMENT_BLOCKED": ("Blocked", "warn"),
     "DUPLICATE_SKIPPED": ("Duplicate Skipped", "warn"),
     "RETRY": ("Retry", "run"),
@@ -492,6 +580,22 @@ def message_text(event, fields):
         detail_rows.append(("&#9993;", "Triggered By", html.escape(str(fields["triggered_by"])), False))
     if fields.get("user_role"):
         detail_rows.append(("&#128100;", "Role", html.escape(str(fields["user_role"])), False))
+    if fields.get("request_id"):
+        detail_rows.append(("&#35;", "Request ID", html.escape(str(fields["request_id"])), False))
+    if fields.get("risk"):
+        detail_rows.append(("&#9888;", "Risk", html.escape(str(fields["risk"])), False))
+    if fields.get("request_url"):
+        safe_url = html.escape(str(fields["request_url"]), quote=True)
+        detail_rows.append(
+            (
+                "&#128279;",
+                "Portal",
+                f'<a href="{safe_url}">Open this request in the portal</a>',
+                False,
+            )
+        )
+    if fields.get("decision"):
+        detail_rows.append(("&#9998;", "Decision", html.escape(str(fields["decision"])), False))
     if fields.get("execution_result"):
         detail_rows.append(("&#9881;", "Execution Result", html.escape(str(fields["execution_result"])), False))
     if fields.get("verification_result"):

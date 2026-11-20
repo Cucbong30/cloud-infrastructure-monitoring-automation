@@ -7,7 +7,7 @@ from app.executors.ansible import playbook_failure_stage
 from app.executors.base import ExecutionResult
 from app.extensions import db
 from app.executors import EXECUTORS, get_executor
-from app.executors.actions import ACTIONS, DENIED_ACTIONS, SERVICE_LABELS
+from app.executors.actions import ACTIONS, DENIED_ACTIONS, SERVICE_LABELS, action_risk
 from app.executors.ansible import allowed_parameters
 from app.models import AutomationJob, Server, User, utcnow
 from app.services.audit import record
@@ -383,6 +383,16 @@ def queue_and_dispatch(
     retry_of_job_id=None,
 ):
     server = db.session.get(Server, server_id)
+    if server is not None and action_risk(action_key) != "low":
+        from app.services.approval import ApprovalForbidden, ApprovalPending, can_request, open_request
+
+        if not can_request(actor, action_key):
+            from app.services.remediation import _deny_request
+
+            _deny_request(server, action_key, actor)
+            role = (getattr(actor, "role", None) or "unknown").capitalize()
+            raise ApprovalForbidden(f"Permission denied for {role} role")
+        raise ApprovalPending(open_request(server, action_key, parameters, actor, alert_id))
     if server is not None:
         reason = refuse_unreachable_management(
             server,
@@ -412,6 +422,16 @@ def retry_job(job_id, actor):
         raise AutomationRejected("Only a failed job can be retried.")
     parameters = json.loads(old.parameters_json or "{}")
     server = db.session.get(Server, old.server_id)
+    if server is not None and action_risk(old.action_key) != "low":
+        from app.services.approval import ApprovalForbidden, ApprovalPending, can_request, open_request
+
+        if not can_request(actor, old.action_key):
+            from app.services.remediation import _deny_request
+
+            _deny_request(server, old.action_key, actor)
+            role = (getattr(actor, "role", None) or "unknown").capitalize()
+            raise ApprovalForbidden(f"Permission denied for {role} role")
+        raise ApprovalPending(open_request(server, old.action_key, parameters, actor, old.alert_id))
     if server is not None:
         reason = refuse_unreachable_management(
             server,

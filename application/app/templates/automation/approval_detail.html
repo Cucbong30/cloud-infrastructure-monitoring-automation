@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Approval {{ approval.id }} · Operations Portal{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Approval {{ approval.id }}</h1>
+  <a class="btn btn-outline-secondary" href="{{ url_for('automation.approvals') }}">Approval queue</a>
+</div>
+<div class="card mb-4"><div class="card-body">
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Request ID</dt><dd class="col-sm-9">{{ approval.id }}</dd>
+    <dt class="col-sm-3">Requester</dt><dd class="col-sm-9">{{ approval.requester_name }}</dd>
+    <dt class="col-sm-3">Requester role</dt><dd class="col-sm-9">{{ approval.requester_role }}</dd>
+    <dt class="col-sm-3">Target</dt><dd class="col-sm-9">{{ approval.server.name if approval.server else '—' }}</dd>
+    <dt class="col-sm-3">Service</dt><dd class="col-sm-9">{{ approval.service }}</dd>
+    <dt class="col-sm-3">Action</dt><dd class="col-sm-9"><code>{{ approval.action_key }}</code></dd>
+    <dt class="col-sm-3">Risk</dt><dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(approval.risk) }}">{{ approval.risk }}</span></dd>
+    <dt class="col-sm-3">Mode</dt><dd class="col-sm-9">{{ approval.mode or 'MANUAL' }}</dd>
+    <dt class="col-sm-3">Requested at</dt><dd class="col-sm-9">{{ approval.requested_at | dt }}</dd>
+    <dt class="col-sm-3">Expires at</dt><dd class="col-sm-9">{{ approval.expires_at | dt }}</dd>
+    <dt class="col-sm-3">Approval status</dt><dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(approval.status) }}">{{ approval.status }}</span></dd>
+    <dt class="col-sm-3">Approver</dt><dd class="col-sm-9">{% if approval.approver_name %}{{ approval.approver_name }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Approver role</dt><dd class="col-sm-9">{{ approval.approver_role or '—' }}</dd>
+    <dt class="col-sm-3">Decision</dt><dd class="col-sm-9">{{ approval.decision or '—' }}</dd>
+    <dt class="col-sm-3">Decision time</dt><dd class="col-sm-9">{% if approval.decision_at %}{{ approval.decision_at | dt }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Execution started at</dt><dd class="col-sm-9">{% if approval.execution_started_at %}{{ approval.execution_started_at | dt }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Execution result</dt><dd class="col-sm-9">{{ approval.execution_result or 'NOT_RUN' }}</dd>
+    <dt class="col-sm-3">Verification result</dt><dd class="col-sm-9">{{ approval.verification_result or 'NOT_RUN' }}</dd>
+    <dt class="col-sm-3">Final status</dt><dd class="col-sm-9">{{ approval.final_status or approval.status }}</dd>
+    <dt class="col-sm-3">Job</dt><dd class="col-sm-9">{% if approval.job_id %}<a href="{{ url_for('automation.detail', job_id=approval.job_id) }}">Job {{ approval.job_id }}</a>{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Incident</dt><dd class="col-sm-9">{{ approval.incident_id or '—' }}</dd>
+    {% if approval.decision_reason %}
+      <dt class="col-sm-3">Reason</dt><dd class="col-sm-9">{{ approval.decision_reason }}</dd>
+    {% endif %}
+  </dl>
+  {% if can_decide %}
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <form method="post" action="{{ url_for('automation.approve_request', request_id=approval.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-success" type="submit" id="approve-button">Approve</button>
+      </form>
+      <form method="post" action="{{ url_for('automation.reject_request', request_id=approval.id) }}" class="d-flex gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input class="form-control" name="reason" placeholder="Reject reason" required>
+        <button class="btn btn-outline-danger" type="submit" id="reject-button">Reject</button>
+      </form>
+    </div>
+  {% elif approval.status == 'PENDING_APPROVAL' %}
+    <p class="text-secondary mt-3 mb-0">This request is waiting for an admin. Operator cannot approve it.</p>
+  {% endif %}
+</div></div>
+<h2 class="h5">Audit</h2>
+<div class="table-responsive card">
+  <table class="table mb-0">
+    <thead>
+      <tr><th>When</th><th>Actor</th><th>Role</th><th>Action</th><th>Decision</th><th>Final status</th><th>Reason</th></tr>
+    </thead>
+    <tbody>
+      {% for entry in audits %}
+        {% set facts = audit_facts(entry) %}
+        <tr>
+          <td>{{ entry.created_at | dt }}</td>
+          <td>{{ facts.actor }}</td>
+          <td>{{ facts.role }}</td>
+          <td><code>{{ entry.action }}</code></td>
+          <td>{{ facts.decision }}</td>
+          <td>{{ facts.final_status }}</td>
+          <td>{{ facts.reason }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7" class="text-secondary">No audit events.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

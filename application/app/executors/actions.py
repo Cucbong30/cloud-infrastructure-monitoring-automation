@@ -30,12 +30,26 @@ ACTIONS = {
         ("service_name",),
         risk="low",
     ),
+    "restart_docker_service": ActionDefinition(
+        "restart_docker_service",
+        "~/ansible/playbooks/restart-docker-service.yml",
+        (),
+        risk="medium",
+    ),
+    "reboot_server": ActionDefinition(
+        "reboot_server",
+        "~/ansible/playbooks/reboot-azure01.yml",
+        (),
+        risk="high",
+    ),
 }
 
 SERVICE_LABELS = {
     "restart_nginx": "Nginx",
     "restart_container": "App",
     "restart_windows_exporter": "Windows Exporter",
+    "restart_docker_service": "Docker",
+    "reboot_server": "Host",
 }
 
 LAB_TARGETS = {
@@ -55,8 +69,13 @@ def target_spec(server_name, action_key):
     specs = {
         ("WEB01", "restart_nginx"): ("192.168.10.11", {}),
         ("APP01", "restart_container"): ("192.168.10.12", {"container_name": "app01-web"}),
+        ("APP01", "restart_docker_service"): ("192.168.10.12", {}),
         ("WIN01", "restart_windows_exporter"): ("192.168.10.13", {"service_name": "windows_exporter"}),
     }
+    if name == "AZURE01" and action_key == "reboot_server":
+        from app.services.inventory import azure_settings
+
+        return azure_settings()["ip"], {}
     return specs.get((name, action_key))
 
 
@@ -86,7 +105,7 @@ DENIED_ACTIONS = frozenset(
 
 
 def action_risk(action_key):
-    """LOW actions may run automatically. MEDIUM and HIGH stay manual."""
+    """LOW runs immediately. MEDIUM and HIGH wait for an admin."""
     if action_key in DENIED_ACTIONS:
         return "high"
     action = ACTIONS.get(action_key)

@@ -9,7 +9,7 @@
   <form method="post" action="{{ url_for('automation.create_job') }}" class="card mb-4">
     <div class="card-body">
       <h2 class="h5">Manual remediation</h2>
-      <p class="text-secondary mb-3">Choose a target, service, and action. Mode stays MANUAL. The portal still checks permission, duplicate jobs, and the management channel before the playbook runs.</p>
+      <p class="text-secondary mb-3">Choose a target, service, and action. Mode stays MANUAL. LOW runs after the usual checks. MEDIUM and HIGH create an approval request. Only an admin can approve, and the playbook does not start until then.</p>
       {% for notice in unreachable_notices %}
         <div class="alert alert-warning management-block">{{ notice }}</div>
       {% endfor %}
@@ -31,6 +31,10 @@
           {{ form.mode.label(class="form-label") }}
           {{ form.mode(class="form-select") }}
         </div>
+        <div class="col-md-3">
+          <label class="form-label" for="action-risk">Risk</label>
+          <div id="action-risk" class="risk-pill risk-low">LOW</div>
+        </div>
         {% if automation_executor == 'mock' %}
           <div class="col-md-3">
             {{ form.simulate.label(class="form-label") }}
@@ -42,25 +46,47 @@
     </div>
   </form>
   <script>
-    const targetActions = {
-      WEB01: ["Nginx", "restart_nginx"],
-      AZURE01: ["Nginx", "restart_nginx"],
-      APP01: ["App", "restart_container"],
-      WIN01: ["Windows Exporter", "restart_windows_exporter"]
-    };
+    const actionRisks = {{ action_risks|tojson }};
+    const targetActions = {{ target_actions|tojson }};
+    const canRequestHigh = {{ (current_user.role == 'admin')|tojson }};
     const serverSelect = document.getElementById("server_id");
     const serviceSelect = document.getElementById("service");
     const actionSelect = document.getElementById("action_key");
+    function selectedTarget() {
+      if (!serverSelect) return "";
+      return serverSelect.options[serverSelect.selectedIndex].text.split(" ")[0];
+    }
+    function actionsForTarget() {
+      return (targetActions[selectedTarget()] || []).filter(function (item) {
+        return canRequestHigh || actionRisks[item.action] !== "HIGH";
+      });
+    }
+    function paintRisk(action) {
+      const risk = document.getElementById("action-risk");
+      if (!risk) return;
+      const level = actionRisks[action] || "LOW";
+      risk.textContent = level;
+      risk.className = "risk-pill risk-" + level.toLowerCase();
+    }
     function alignManualForm() {
       if (!serverSelect || !serviceSelect || !actionSelect) return;
-      const label = serverSelect.options[serverSelect.selectedIndex].text.split(" ")[0];
-      const pair = targetActions[label];
-      if (!pair) return;
-      serviceSelect.value = pair[0];
-      actionSelect.value = pair[1];
+      const options = actionsForTarget();
+      const allowed = options.map(function (item) { return item.action; });
+      Array.prototype.forEach.call(actionSelect.options, function (option) {
+        const visible = allowed.indexOf(option.value) !== -1;
+        option.hidden = !visible;
+        option.disabled = !visible;
+      });
+      if (allowed.indexOf(actionSelect.value) === -1 && options.length) {
+        actionSelect.value = options[0].action;
+      }
+      const chosen = options.find(function (item) { return item.action === actionSelect.value; });
+      if (chosen) serviceSelect.value = chosen.service;
+      paintRisk(actionSelect.value);
     }
     if (serverSelect) {
       serverSelect.addEventListener("change", alignManualForm);
+      actionSelect.addEventListener("change", alignManualForm);
       alignManualForm();
     }
   </script>

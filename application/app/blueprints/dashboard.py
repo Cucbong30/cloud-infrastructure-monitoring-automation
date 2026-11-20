@@ -341,6 +341,11 @@ def _audit_event(row):
         "remediation.skipped": "Duplicate remediation skipped",
         "remediation.retry": "Manual remediation retry",
         "permission.denied": "Permission denied",
+        "approval.requested": "Approval requested",
+        "approval.approved": "Approval approved",
+        "approval.rejected": "Approval rejected",
+        "approval.expired": "Approval expired",
+        "approval.completed": "Approval execution finished",
     }
     reason = data.get("reason")
     title = titles.get(row.action, row.action)

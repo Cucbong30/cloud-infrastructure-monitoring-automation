@@ -3,9 +3,11 @@ from flask_login import current_user
 from sqlalchemy import select
 
 from app.authz import roles_required
+from app.executors.actions import action_risk
 from app.extensions import db
 from app.models import Alert, utcnow
 from app.presentation import job_outcome_label
+from app.services.approval import ApprovalPending, can_request, open_request
 from app.services.audit import record
 from app.services.automation import AutomationRejected, RemediationUnavailable, queue_and_dispatch
 from app.services.checks import management_block
@@ -89,6 +91,21 @@ def remediate(alert_id):
         flash(blocked_reason(alert.server, alert), "warning")
         return redirect(url_for("alerts.index"))
     try:
+        if action_risk(suggestion["action_key"]) != "low":
+            if not can_request(current_user, suggestion["action_key"]):
+                from app.services.remediation import _deny_request
+
+                _deny_request(alert.server, suggestion["action_key"], current_user)
+                abort(403)
+            raise ApprovalPending(
+                open_request(
+                    alert.server,
+                    suggestion["action_key"],
+                    suggestion["parameters"],
+                    current_user,
+                    alert.id,
+                )
+            )
         job = queue_and_dispatch(
             server_id=alert.server.id,
             action_key=suggestion["action_key"],
@@ -100,6 +117,12 @@ def remediate(alert_id):
     except RemediationUnavailable as exc:
         flash(exc.reason, "warning")
         return redirect(url_for("alerts.index"))
+    except ApprovalPending as pending:
+        flash(
+            f"Approval request {pending.request.id} is PENDING_APPROVAL. The playbook was not started.",
+            "warning",
+        )
+        return redirect(url_for("automation.approval_detail", request_id=pending.request.id))
     except AutomationRejected:
         flash("Remediation was rejected.", "warning")
         return redirect(url_for("alerts.index"))

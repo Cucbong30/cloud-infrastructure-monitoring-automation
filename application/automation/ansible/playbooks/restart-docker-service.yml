@@ -1,0 +1,34 @@
+---
+- name: Restart Docker service on APP01
+  hosts: APP01
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Restart Docker service
+      ansible.builtin.service:
+        name: docker
+        state: restarted
+
+    - name: Wait for Docker service
+      ansible.builtin.command: systemctl is-active docker
+      register: docker_status
+      changed_when: false
+
+    - name: Verify app01-web container is running
+      ansible.builtin.shell: docker ps --filter "name=app01-web" --filter "status=running" --format "{{'{{'}}.Names{{'}}'}}"
+      register: container_status
+      changed_when: false
+
+    - name: Wait for application port 8080
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 8080
+        timeout: 30
+      delegate_to: localhost
+
+    - name: Verify HTTP response
+      ansible.builtin.uri:
+        url: "http://{{ ansible_host }}:8080"
+        status_code: 200
+      delegate_to: localhost
