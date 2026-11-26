@@ -2,11 +2,9 @@
 
 ## 1. Mục đích
 
-Kiểm tra trạng thái các dịch vụ trước khi thực hiện
-Incident Management Integration Testing.
+Kiểm tra trạng thái các dịch vụ trước khi thực hiện Incident Management Integration Testing.
 
-Kết quả được sử dụng làm baseline để đối chiếu
-trạng thái dịch vụ trước và sau khi remediation.
+Kết quả được sử dụng làm baseline để đối chiếu trạng thái dịch vụ trước và sau khi remediation.
 
 ## 2. Môi trường kiểm tra
 
@@ -54,37 +52,28 @@ done
 | WIN01 | HTTP 200 | PASS |
 | AZURE01 | HTTP 200 | PASS |
 
-Kết quả PASS dựa trên xác nhận kiểm tra của
-người thực hiện. Chi tiết HTTP response và
-response time được lưu trong ảnh minh chứng.
+Kết quả PASS dựa trên xác nhận kiểm tra của người thực hiện. Chi tiết HTTP response và response time được lưu trong ảnh minh chứng.
 
 ## 6. Minh chứng
 
-![Service Verification Baseline](../screenshots/09-service-verification-baseline.png)
+![Service Verification Baseline](../screenshots/service-verification/09-service-verification-baseline.png)
 
 ## 7. Verification Policy
 
 - Kiểm tra trạng thái dịch vụ trước khi tạo lỗi.
 - Kiểm tra lại dịch vụ sau khi remediation.
-- Không chỉ dựa vào Ansible Exit Code để kết luận
-  dịch vụ đã phục hồi.
-- Chỉ ghi nhận remediation SUCCESS khi đáp ứng
-  điều kiện verification tương ứng.
+- Không chỉ dựa vào Ansible Exit Code để kết luận dịch vụ đã phục hồi.
+- Chỉ ghi nhận remediation SUCCESS khi đáp ứng điều kiện verification tương ứng.
 - Verification Failed không tự động retry.
-- Không tự động Resolve Incident khi verification
-  thất bại.
+- Không tự động Resolve Incident khi verification thất bại.
 
-HTTP 200 xác nhận endpoint có phản hồi tại thời
-điểm kiểm tra, không đại diện cho toàn bộ trạng
-thái hoặc chức năng nghiệp vụ của ứng dụng.
+HTTP 200 xác nhận endpoint có phản hồi tại thời điểm kiểm tra, không đại diện cho toàn bộ trạng thái hoặc chức năng nghiệp vụ của ứng dụng.
 
 ## 8. Kết luận
 
-Đã hoàn thành kiểm tra Service Verification Baseline
-cho các target trong môi trường Hybrid Cloud.
+Đã hoàn thành kiểm tra Service Verification Baseline cho các target trong môi trường Hybrid Cloud.
 
-Kết quả được sử dụng để đối chiếu trong các test case
-Remediation Success, Verification Failed và Manual Recovery.
+Kết quả được sử dụng để đối chiếu trong các test case Remediation Success, Verification Failed và Manual Recovery.
 
 Không thay đổi cấu hình dịch vụ hoặc production playbook.
 
