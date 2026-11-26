@@ -14,7 +14,7 @@ Kiểm tra hostname, địa chỉ IP, uptime, RAM, dung lượng ổ đĩa và t
 - IP Address: 192.168.10.10
 - Result: PASS
 
-![MON01 System Baseline](../screenshots/01-mon01-system-baseline.png)
+![MON01 System Baseline](../screenshots/infrastructure-baseline/01-mon01-system-baseline.png)
 
 ## 3. Kiểm tra Local Connectivity
 
@@ -27,7 +27,7 @@ Kiểm tra kết nối từ MON01 đến các máy chủ trong Local Lab.
 | APP01 | 192.168.10.12 | PASS |
 | WIN01 | 192.168.10.13 | PASS |
 
-![Local Server Connectivity](../screenshots/02-local-server-connectivity.png)
+![Local Server Connectivity](../screenshots/infrastructure-baseline/02-local-server-connectivity.png)
 
 ## 4. Kiểm tra Azure Connectivity
 
@@ -42,7 +42,7 @@ Kiểm tra khả năng kết nối và quản trị AZURE01 thông qua Ansible t
 | Management Protocol | SSH |
 | Result | PASS |
 
-![Azure Connectivity](../screenshots/03-azure01-connectivity.png)
+![Azure Connectivity](../screenshots/infrastructure-baseline/03-azure01-connectivity.png)
 
 ## 5. Kiểm tra Monitoring Services
 
@@ -55,7 +55,7 @@ Kiểm tra trạng thái các dịch vụ Monitoring và Alerting trên MON01.
 | Alertmanager | 9093 | PASS |
 | Node Exporter | 9100 | PASS |
 
-![Monitoring Services Status](../screenshots/04-monitoring-services-status.png)
+![Monitoring Services Status](../screenshots/infrastructure-baseline/04-monitoring-services-status.png)
 
 ## 6. Kiểm tra Prometheus Targets
 
@@ -77,7 +77,7 @@ Kết quả:
 - DOWN: 0
 - Result: PASS
 
-![Prometheus Targets](../screenshots/05-prometheus-targets-ui.png)
+![Prometheus Targets](../screenshots/infrastructure-baseline/05-prometheus-targets-ui.png)
 
 ## 7. Kiểm tra Alert Rules
 
@@ -94,7 +94,7 @@ Rule InstanceDown phát hiện các target không thể scrape metrics.
 
 Các sự cố ở cấp độ dịch vụ như Nginx hoặc Docker cần được đối chiếu với cơ chế Service Probe phía Application.
 
-![Alert Rules Validation](../screenshots/06-alert-rules-validation.png)
+![Alert Rules Validation](../screenshots/infrastructure-baseline/06-alert-rules-validation.png)
 
 ## 8. Kiểm tra Ansible Connectivity
 
@@ -111,7 +111,7 @@ WIN01 tiếp tục sử dụng credential được bảo vệ bằng Ansible Vau
 
 Không thay đổi Inventory, Credential hoặc Production Playbook trong quá trình kiểm tra.
 
-![Ansible Connectivity](../screenshots/07-ansible-connectivity.png)
+![Ansible Connectivity](../screenshots/infrastructure-baseline/07-ansible-connectivity.png)
 
 ## 9. Tổng hợp kết quả
 
@@ -134,4 +134,3 @@ Hệ thống Monitoring, Alerting và Ansible hiện tại sẵn sàng phục v�
 Các thành phần đã triển khai từ những tuần trước được giữ nguyên và tái sử dụng.
 
 **Final Result: PASS**
-
