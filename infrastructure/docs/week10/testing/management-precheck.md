@@ -2,12 +2,9 @@
 
 ## 1. Mục đích
 
-Kiểm tra khả năng kết nối đến các kênh quản trị SSH
-và WinRM trước khi thực hiện Incident Management
-Integration Testing.
+Kiểm tra khả năng kết nối đến các kênh quản trị SSH và WinRM trước khi thực hiện Incident Management Integration Testing.
 
-Đảm bảo Ansible không thực thi remediation khi
-kênh quản trị của target không khả dụng.
+Đảm bảo Ansible không thực thi remediation khi kênh quản trị của target không khả dụng.
 
 ## 2. Môi trường kiểm tra
 
@@ -57,42 +54,32 @@ done
 
 Kết quả dựa trên xác nhận của người thực hiện.
 
-Kiểm tra TCP chỉ xác nhận khả năng kết nối đến
-management port, không thay thế kiểm tra xác thực
-SSH, WinRM và Ansible Connectivity.
+Kiểm tra TCP chỉ xác nhận khả năng kết nối đến management port, không thay thế kiểm tra xác thực SSH, WinRM và Ansible Connectivity.
 
 ## 6. Minh chứng
 
-![Management Pre-check](../screenshots/10-management-precheck.png)
+![Management Pre-check](../screenshots/management-precheck/10-management-precheck.png)
 
 ## 7. Management Pre-check Policy
 
-Tiếp tục sử dụng chính sách đã triển khai từ
-những tuần trước:
+Tiếp tục sử dụng chính sách đã triển khai từ những tuần trước:
 
 - Kiểm tra management channel trước khi chạy Ansible.
-- Nếu SSH hoặc WinRM không khả dụng, ghi nhận
-  MANAGEMENT_BLOCKED.
+- Nếu SSH hoặc WinRM không khả dụng, ghi nhận MANAGEMENT_BLOCKED.
 - Không thực thi playbook khi management channel bị chặn.
 - Không sử dụng ngân sách retry cho Management Blocked.
-- Không tự động Resolve Incident khi chưa xác nhận
-  dịch vụ đã phục hồi.
+- Không tự động Resolve Incident khi chưa xác nhận dịch vụ đã phục hồi.
 - Ghi nhận nguyên nhân để người vận hành tiếp tục xử lý.
 
-Các điều kiện liên quan đến Incident Lifecycle
-sẽ được kiểm chứng trong Integration Testing
-với Application.
+Các điều kiện liên quan đến Incident Lifecycle sẽ được kiểm chứng trong Integration Testing với Application.
 
 ## 8. Kết luận
 
-Đã hoàn thành Management Pre-check cho các target
-trong môi trường Hybrid Cloud.
+Đã hoàn thành Management Pre-check cho các target trong môi trường Hybrid Cloud.
 
-Không thay đổi Firewall, SSH, WinRM, Ansible Inventory
-hoặc Production Playbook.
+Không thay đổi Firewall, SSH, WinRM, Ansible Inventory hoặc Production Playbook.
 
-Kết quả được sử dụng làm baseline cho test case
-Management Blocked trong Tuần 10.
+Kết quả được sử dụng làm baseline cho test case Management Blocked trong Tuần 10.
 
 **Baseline Result: PASS**
 
