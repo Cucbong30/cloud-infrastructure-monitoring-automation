@@ -1,6 +1,6 @@
 # Báo cáo tiến độ Tuần 2
 
-## 1. Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud
+## 1. Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud
 
 ### Công việc được phân công
 - Triển khai các máy chủ MON01, WEB01, APP01 và WIN01.
@@ -98,7 +98,7 @@ Trong Tuần 2, nhóm đã hoàn thành nền tảng ban đầu cho cả hai th�
 
 ## 4. Kế hoạch Tuần 3
 
-### Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud
+### Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud
 - Cài đặt Prometheus trên MON01.
 - Cấu hình scrape Node Exporter và Windows Exporter.
 - Cài đặt Grafana.

@@ -6,7 +6,7 @@ Tiếp nối phần Monitoring của Tuần 3, nhóm triển khai Ansible và k�
 
 ## 2. Phân công công việc
 
-### 2.1. Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud
+### 2.1. Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud
 
 | STT | Công việc được phân công | Kết quả thực hiện |
 |---|---|---|

@@ -4,7 +4,7 @@
 
 | Thành viên | Vai trò | Công việc | Trạng thái |
 |---|---|---|---|
-| Đỗ Đăng Thái Bảo | Infrastructure / System / Cloud | Thiết kế kiến trúc hạ tầng; VM Specification; Network/IP Plan; Port Plan; Infrastructure & Network Diagram; Monitoring & Automation Diagram | Hoàn thành |
+| Đỗ Đặng Thái Bảo | Infrastructure / System / Cloud | Thiết kế kiến trúc hạ tầng; VM Specification; Network/IP Plan; Port Plan; Infrastructure & Network Diagram; Monitoring & Automation Diagram | Hoàn thành |
 | Nguyễn Thế Gia Bảo | Application / Integration | Thiết kế module Web Portal; Application Architecture; ERD; Wireframe; Flask project structure; SQLite schema | Hoàn thành |
 
 ## 2. Kết quả thực hiện

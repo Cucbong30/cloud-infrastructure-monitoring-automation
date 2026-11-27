@@ -8,7 +8,7 @@ Thư mục này dùng để theo dõi phân công công việc, tiến độ th�
 
 | Thành viên | Vai trò |
 |---|---|
-| Đỗ Đăng Thái Bảo | Infrastructure / System / Cloud |
+| Đỗ Đặng Thái Bảo | Infrastructure / System / Cloud |
 | Nguyễn Thế Gia Bảo | Application / Integration |
 
 ## 2. Tổng quan tiến độ

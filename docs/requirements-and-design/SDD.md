@@ -9,7 +9,7 @@
 | Tên tài liệu | Software Design Description |
 | Phiên bản | 1.0 |
 | Ngày cập nhật | 26/11/2026 |
-| Infrastructure / System / Cloud | Đỗ Đăng Thái Bảo |
+| Infrastructure / System / Cloud | Đỗ Đặng Thái Bảo |
 | Application / Integration | Nguyễn Thế Gia Bảo |
 | Tài liệu tham chiếu | Software Requirements Specification (SRS) |
 | Trạng thái | Bản thiết kế, chờ rà soát và xác nhận |

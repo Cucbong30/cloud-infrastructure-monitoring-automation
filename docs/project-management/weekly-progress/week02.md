@@ -6,7 +6,7 @@ Sau khi thống nhất kiến trúc hệ thống, công nghệ sử dụng và c
 
 Phần Infrastructure tập trung dựng các máy chủ, cấu hình mạng, triển khai dịch vụ và chuẩn bị môi trường monitoring. Phần Application xây dựng các chức năng nền tảng của Portal, trước mắt sử dụng dữ liệu demo để có thể phát triển song song mà không phải chờ hệ thống Infrastructure hoàn thành.
 
-## 2. Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud
+## 2. Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud
 
 ### Công việc được phân công
 
@@ -98,7 +98,7 @@ Các công việc chính theo kế hoạch Tuần 2 đã được thực hiện:
 
 ## 6. Kế hoạch Tuần 3 – Monitoring & Portal Integration
 
-**Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud**
+**Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud**
 
 - Cài đặt và cấu hình Prometheus trên MON01.
 - Thu thập metrics từ các máy chủ trong lab.

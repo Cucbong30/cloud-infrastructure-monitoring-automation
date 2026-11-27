@@ -6,7 +6,7 @@
 
 **Thành viên thực hiện:**
 
-- Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud.
+- Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud.
 - Nguyễn Thế Gia Bảo – Application / Integration.
 
 ## 2. Cam kết sản phẩm cuối cùng
@@ -239,7 +239,7 @@ Hai thành viên cam kết thực hiện các nội dung sản phẩm, kiểm th
 
 | Thành viên | Vai trò |
 |---|---|
-| Đỗ Đăng Thái Bảo | Infrastructure / System / Cloud |
+| Đỗ Đặng Thái Bảo | Infrastructure / System / Cloud |
 | Nguyễn Thế Gia Bảo | Application / Integration |
 
 

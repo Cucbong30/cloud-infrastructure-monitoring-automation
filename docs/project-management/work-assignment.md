@@ -8,14 +8,14 @@
 
 | Thành viên | Vai trò | Công việc phụ trách |
 |---|---|---|
-| Đỗ Đăng Thái Bảo | Infrastructure / System / Cloud | Thiết kế và triển khai hạ tầng, Linux, Windows Server, Networking, Monitoring, Ansible, Microsoft Azure, Entra ID và kiểm thử Infrastructure. |
+| Đỗ Đặng Thái Bảo | Infrastructure / System / Cloud | Thiết kế và triển khai hạ tầng, Linux, Windows Server, Networking, Monitoring, Ansible, Microsoft Azure, Entra ID và kiểm thử Infrastructure. |
 | Nguyễn Thế Gia Bảo | Application / Integration | Phát triển Operations Portal, Database, API Integration, Automation Workflow, SSO, RBAC, Approval, Incident Management, Audit Log và Notification. |
 
 Hai thành viên cùng thống nhất kiến trúc, tích hợp hệ thống, kiểm thử các tình huống sự cố và xây dựng tài liệu đề tài.
 
 ## 3. Bảng phân công theo từng tuần
 
-| Tuần | Nội dung | Đỗ Đăng Thái Bảo | Nguyễn Thế Gia Bảo | Trạng thái | Chi tiết |
+| Tuần | Nội dung | Đỗ Đặng Thái Bảo | Nguyễn Thế Gia Bảo | Trạng thái | Chi tiết |
 |---|---|---|---|---|---|
 | 01 | System Design | Thiết kế kiến trúc hạ tầng, VM, Network, IP và Port Plan. | Thiết kế Application Architecture, Database, Wireframe và các module Portal. | Hoàn thành | [Tuần 01](weekly-progress/week01.md) |
 | 02 | System Deployment | Triển khai các VM, dịch vụ, SSH, WinRM và Monitoring Exporter. | Phát triển Portal, Database, Login, RBAC và các module cơ bản. | Hoàn thành | [Tuần 02](weekly-progress/week02.md) |

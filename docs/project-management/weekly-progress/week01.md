@@ -6,7 +6,7 @@ Thiết kế kiến trúc hạ tầng và ứng dụng, xác định các thành
 
 ## 2. Phân công và kết quả thực hiện
 
-### 2.1. Đỗ Đăng Thái Bảo
+### 2.1. Đỗ Đặng Thái Bảo
 
 **Vai trò:** Infrastructure / System / Cloud
 

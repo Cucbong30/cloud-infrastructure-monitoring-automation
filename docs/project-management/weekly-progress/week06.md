@@ -6,7 +6,7 @@ Mở rộng từ Manual Remediation sang Auto-remediation có kiểm soát. Hệ
 
 ## 2. Phân công công việc
 
-### 2.1. Đỗ Đăng Thái Bảo – Infrastructure / System / Cloud
+### 2.1. Đỗ Đặng Thái Bảo – Infrastructure / System / Cloud
 
 | STT | Công việc được phân công | Kết quả thực hiện |
 |---|---|---|
