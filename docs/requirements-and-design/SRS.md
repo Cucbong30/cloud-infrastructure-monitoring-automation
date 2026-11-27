@@ -9,7 +9,7 @@
 | Tên tài liệu | Software Requirements Specification |
 | Phiên bản | 1.0 |
 | Ngày cập nhật | 26/11/2026 |
-| Thành viên | Đỗ Đăng Thái Bảo |
+| Thành viên | Đỗ Đặng Thái Bảo |
 | Thành viên | Nguyễn Thế Gia Bảo |
 
 ## 2. Giới thiệu
