@@ -158,7 +158,7 @@ Chi tiết trạng thái approval được trình bày riêng trong [DG-06](appr
 | WIN01 | `restart_windows_exporter` | LOW | WinRM 5985 | Exporter 9182 |
 | AZURE01 | `restart_nginx` | LOW | SSH 22 | HTTP 80 |
 | APP01 | `restart_docker_service` | MEDIUM | SSH 22 | Docker service / workload check |
-| AZURE01 | `reboot_server` | HIGH | SSH 22 | Boot ID thay đổi, SSH và HTTP phục hồi |
+| AZURE01 | `reboot_server` | HIGH | SSH 22 | SSH 22 và Nginx HTTP sau khi máy lên lại. Playbook còn kiểm tra Nginx, Node Exporter, cổng 80 và 9100. |
 
 Các action LOW trong allow-list có thể chạy tự động nếu đủ điều kiện. MEDIUM chỉ Admin hoặc Operator được request, HIGH chỉ Admin được request; cả hai mức đều cần Admin approve. CPU, RAM hoặc Disk cao không tự động dẫn đến reboot, xóa file hoặc thay đổi network.
 

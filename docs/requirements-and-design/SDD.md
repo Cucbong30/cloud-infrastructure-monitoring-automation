@@ -300,7 +300,7 @@ Database nghiệp vụ tập trung lưu:
 | Alert | ID, Server Reference, Fingerprint, Severity, Status, Started Time, Resolved Time |
 | Automation Job | ID, Server Reference, Incident Reference, Action, Mode, Actor, Execution Status, Verification Result, Final Status, Timestamp |
 | Approval Request | ID, Target Reference, Action, Risk Level, Requester, Approver, Decision, Created Time, Expiration Time, Job Reference |
-| Incident | ID, Server Reference, Alert Reference, Severity, Status, Retry Count, Assigned User, Created Time, Resolved Time, Closed Time |
+| Incident | ID, Server Reference, Alert Reference, Action, Status `open`/`resolved`, Retry Count, Manual Required, Verification Failed, Blocked, Reason, Opened Time, Closed Time. Severity, Assigned User và các trạng thái ACKNOWLEDGED, IN_PROGRESS, CLOSED là thiết kế Tuần 10, chưa có column riêng. |
 | Audit Log | ID, Actor, Role, Action, Target, Result, Timestamp |
 
 Tên thuộc tính trong bảng là tên mô tả nghiệp vụ. Tên column, kiểu dữ liệu và constraint vật lý cần được đối chiếu với SQLAlchemy Models và Database Migration.
@@ -424,7 +424,7 @@ Credential được quản lý tại môi trường thực thi Ansible, không t
 | WIN01 | Restart Windows Exporter | LOW | Auto / Manual | Metrics Endpoint 9182 |
 | AZURE01 | Restart Nginx | LOW | Auto / Manual | HTTP 80 |
 | APP01 | Restart Docker Service | MEDIUM | Admin Approval | Docker Service, Container, HTTP 8080 |
-| AZURE01 | Reboot Server | HIGH | Admin Approval | Boot ID, SSH, HTTP 80 |
+| AZURE01 | Reboot Server | HIGH | Admin Approval | SSH 22 và Nginx HTTP. Playbook trên MON01 còn kiểm tra Nginx, Node Exporter, cổng 80 và 9100. Boot ID không nằm trong verification hiện tại. |
 
 Action LOW chỉ được tự động thực thi khi đáp ứng Auto-remediation Policy.
 
@@ -487,7 +487,7 @@ Cơ chế kiểm tra và tạo job cần đảm bảo không phát sinh race con
 | Restart Container | Kiểm tra container Running và HTTP endpoint. |
 | Restart Windows Exporter | Kiểm tra Windows Exporter metrics endpoint. |
 | Restart Docker Service | Kiểm tra Docker Service, container và HTTP endpoint. |
-| Reboot Server | Kiểm tra máy chủ kết nối trở lại, Boot ID thay đổi và dịch vụ hoạt động. |
+| Reboot Server | Portal chỉ kết luận thành công khi SSH cổng 22 và Nginx đều phản hồi. Playbook `reboot-azure01.yml` chờ máy khởi động lại rồi kiểm tra Nginx, Node Exporter, cổng 80 và 9100. |
 
 Exit Code 0 của Ansible không đủ để kết luận remediation thành công nếu chưa có kết quả verification phù hợp.
 
@@ -513,10 +513,10 @@ Các action MEDIUM và HIGH phải được phê duyệt trước khi tạo exec
 
 | Trạng thái | Ý nghĩa |
 |---|---|
-| PENDING | Yêu cầu đang chờ phê duyệt. |
-| APPROVED | Yêu cầu đã được Admin chấp thuận. |
-| REJECTED | Yêu cầu bị từ chối. |
-| EXPIRED | Yêu cầu đã hết thời hạn phê duyệt. |
+| PENDING_APPROVAL | Yêu cầu đang chờ phê duyệt. Chưa có Automation Job. |
+| APPROVED | Admin đã chấp thuận. Portal mới được tạo job và gọi Ansible. |
+| REJECTED | Admin từ chối. Không gọi playbook. |
+| APPROVAL_EXPIRED | Quá `APPROVAL_TIMEOUT_MINUTES`, hiện là 5 phút. Không tự duyệt và không gọi playbook. |
 
 ### 11.3. Approval Processing
 
@@ -934,7 +934,7 @@ Các nhóm thiết kế trong SDD được liên kết với yêu cầu tương 
 | FR-AUD | Audit Trail Design | DG-04, DG-05 |
 | NFR | Non-functional Design | Các sơ đồ liên quan |
 
-Requirements Traceability Matrix chi tiết sẽ được xây dựng sau khi hoàn thành các sơ đồ và xác định test case tương ứng.
+Ma trận truy vết chi tiết nằm tại [requirements-traceability-matrix.md](requirements-traceability-matrix.md).
 
 ## 23. Tài liệu tham chiếu
 
@@ -950,3 +950,4 @@ Requirements Traceability Matrix chi tiết sẽ được xây dựng sau khi ho
 | Phiên bản | Ngày | Nội dung |
 |---|---|---|
 | 1.0 | 26/11/2026 | Xây dựng tài liệu thiết kế tổng thể dựa trên SRS, kiến trúc hệ thống và kết quả triển khai đến Tuần 9. |
+| 1.1 | 27/11/2026 | Bổ sung DG-04, DG-06, DG-07 và RTM. Đối chiếu tên trạng thái approval, schema Incident và verification reboot với models và playbook hiện hành. |

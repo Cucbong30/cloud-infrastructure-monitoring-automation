@@ -113,7 +113,7 @@ Sơ đồ sử dụng Mermaid flowchart với các nhóm node và execution envi
 | Artifact / cấu hình | Vị trí triển khai | Ghi chú |
 |---|---|---|
 | Flask application và service adapters | Application runtime | Monitoring API, RBAC, remediation, approval, audit |
-| SQLite database và migrations | Application runtime | Dữ liệu nghiệp vụ; không triển khai database server riêng |
+| SQLite database và migrations | Application runtime, file `instance/portal.db` cạnh tiến trình Flask | Dữ liệu nghiệp vụ trên laptop lab; không có database server riêng |
 | Prometheus configuration và alert rules | MON01 | Scrape metrics và đánh giá cảnh báo |
 | Grafana dashboards | MON01 | Trực quan hóa metrics |
 | Alertmanager configuration | MON01 | Chuyển cảnh báo qua webhook |
