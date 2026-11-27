@@ -119,6 +119,9 @@ Incident đã xuất hiện trong dữ liệu và kết quả remediation của 
 
 - [DG-01 – System Architecture](system-architecture.md)
 - [DG-02 – Network Topology](network-topology.md)
+- [DG-04 – Database ERD](database-erd.md)
+- [DG-06 – Approval Workflow](approval-workflow.md)
+- [DG-07 – Incident State Diagram](incident-state-diagram.md)
 - [SRS](../SRS.md) và [SDD](../SDD.md)
 - [Application – Tuần 8, RBAC và manual remediation](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/commit/4960f041ed12294b595016e993720ba209fd6bf8)
 - [Application – Tuần 9, Approval Service](https://github.com/Cucbong30/cloud-infrastructure-monitoring-automation/blob/b95ad447b07e58401e4296b4bd67a15852064998/application/app/services/approval.py)

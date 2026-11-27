@@ -214,7 +214,7 @@ Các stakeholder trên là nhóm đối tượng sử dụng mục tiêu của s
 | ID | Yêu cầu chức năng | Acceptance Criteria | Ưu tiên |
 |---|---|---|---|
 | FR-INC-01 | Tạo Incident từ cảnh báo phù hợp. | Incident được tạo và liên kết với Alert và Target tương ứng. | Must |
-| FR-INC-02 | Quản lý vòng đời Incident. | Hỗ trợ OPEN, ACKNOWLEDGED, IN_PROGRESS, RESOLVED và CLOSED theo quy tắc chuyển trạng thái. | Must |
+| FR-INC-02 | Quản lý vòng đời Incident. | Hiện tại lưu `open` hoặc `resolved`, kèm cờ retry, manual required, verification failed và blocked. ACKNOWLEDGED, IN_PROGRESS và CLOSED là mục tiêu Tuần 10, được phân biệt trong DG-07. | Must |
 | FR-INC-03 | Liên kết Incident với Automation Job. | Một Incident có thể truy vết nhiều job phát sinh trong quá trình xử lý. | Must |
 | FR-INC-04 | Tự động xác nhận phục hồi. | Incident đủ điều kiện được chuyển sang RESOLVED khi remediation và verification thành công. | Must |
 | FR-INC-05 | Xử lý remediation thất bại. | Incident không tự chuyển sang RESOLVED hoặc CLOSED khi dịch vụ chưa phục hồi. | Must |
@@ -535,11 +535,15 @@ Các yêu cầu chưa được triển khai hoặc chưa kiểm thử không đ�
 - [Bản cam kết sản phẩm và bộ metric đánh giá](../project-management/product-commitment-and-metrics.md)
 - [Bảng phân công công việc](../project-management/work-assignment.md)
 - [Tiến độ thực hiện theo tuần](../project-management/weekly-progress/)
-- Software Design Description (SDD) – cập nhật sau.
-- Requirements Traceability Matrix (RTM) – cập nhật sau.
+- [Software Design Description](SDD.md)
+- [Requirements Traceability Matrix](requirements-traceability-matrix.md)
+- [DG-04 Database ERD](diagrams/database-erd.md)
+- [DG-06 Approval Workflow](diagrams/approval-workflow.md)
+- [DG-07 Incident State Diagram](diagrams/incident-state-diagram.md)
 
 ## 15. Lịch sử cập nhật
 
 | Phiên bản | Ngày | Nội dung |
 |---|---|---|
 | 1.0 | 26/11/2026 | Xây dựng bản đặc tả yêu cầu hệ thống và tiêu chí chấp nhận. |
+| 1.1 | 27/11/2026 | Nối SRS với SDD, RTM và các sơ đồ DG-04, DG-06, DG-07. Phân biệt vòng đời Incident đã lưu với thiết kế Tuần 10. |
