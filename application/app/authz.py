@@ -11,7 +11,16 @@ def roles_required(*roles):
             if not current_user.is_authenticated:
                 return redirect(url_for("auth.login", next=request.path))
             if current_user.role not in roles:
-                if request.endpoint in {"automation.create_job", "automation.retry", "alerts.remediate"}:
+                if request.endpoint in {
+                    "automation.create_job",
+                    "automation.retry",
+                    "automation.approve_request",
+                    "automation.reject_request",
+                    "alerts.remediate",
+                    "incidents.acknowledge",
+                    "incidents.close",
+                    "incidents.remediate",
+                }:
                     try:
                         from app.services.audit import record
 

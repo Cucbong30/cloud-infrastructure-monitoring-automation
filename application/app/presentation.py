@@ -43,6 +43,13 @@ BADGE_CLASSES = {
     "QUEUED": "secondary",
     "AUTO": "primary",
     "MANUAL": "secondary",
+    "LOW": "success",
+    "MEDIUM": "warning",
+    "HIGH": "danger",
+    "PENDING_APPROVAL": "warning",
+    "APPROVED": "success",
+    "REJECTED": "danger",
+    "APPROVAL_EXPIRED": "secondary",
     "PENDING": "secondary",
     "RUNNING": "primary",
     "CANCELED": "dark",
@@ -223,6 +230,41 @@ def _trigger_token(value):
     return labels.get(text, text.upper())
 
 
+INCIDENT_STATUS_LABELS = {
+    "open": "OPEN",
+    "acknowledged": "ACKNOWLEDGED",
+    "in_progress": "IN_PROGRESS",
+    "resolved": "RESOLVED",
+    "closed": "CLOSED",
+}
+
+INCIDENT_EVENT_TITLES = {
+    "detected": "Incident Detected",
+    "acknowledged": "Acknowledged",
+    "remediation_started": "Remediation Started",
+    "retry": "Remediation Retry",
+    "execution_failed": "Execution Failed",
+    "verification_failed": "Verification Failed",
+    "blocked": "Remediation Blocked",
+    "manual_investigation": "Manual Investigation",
+    "recovery_verified": "Recovery Verified",
+    "resolved": "Incident Resolved",
+    "closed": "Incident Closed",
+    "approval_requested": "Approval Requested",
+    "approval_approved": "Approval Approved",
+    "approval_rejected": "Approval Rejected",
+    "approval_expired": "Approval Expired",
+}
+
+
+def incident_status_label(status):
+    return INCIDENT_STATUS_LABELS.get(status, (status or "—").upper())
+
+
+def incident_event_title(event_key):
+    return INCIDENT_EVENT_TITLES.get(event_key, event_key or "Update")
+
+
 def audit_facts(entry):
     """Target, action, trigger, result, and reason stored on an audit row."""
     raw = getattr(entry, "details_json", None) or ""
@@ -251,6 +293,11 @@ def audit_facts(entry):
         "triggered_by": data.get("triggered_by") or data.get("actor") or "—",
         "execution_result": data.get("execution_result") or ("NOT_RUN" if final_status == "DUPLICATE_SKIPPED" else "—"),
         "verification_result": data.get("verification_result") or ("NOT_RUN" if final_status == "DUPLICATE_SKIPPED" else "—"),
+        "decision": data.get("decision") or "—",
+        "risk": data.get("risk") or "—",
+        "request_id": data.get("request_id") or "—",
+        "requester": data.get("requester") or "—",
+        "approver": data.get("approver") or "—",
     }
 
 

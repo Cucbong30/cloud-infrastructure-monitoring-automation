@@ -15,7 +15,7 @@ def test_pages_render_without_prometheus(seeded, client):
     login(client, "viewer")
     with seeded.app_context():
         server_id = db.session.scalar(select(Server.id).where(Server.name == "web-01"))
-    paths = ["/dashboard", "/servers/", "/alerts/", "/automation/", f"/servers/{server_id}"]
+    paths = ["/dashboard", "/servers/", "/alerts/", "/incidents/", "/automation/", f"/servers/{server_id}"]
     for path in paths:
         response = client.get(path)
         assert response.status_code == 200, path
@@ -32,10 +32,11 @@ def test_pages_render_without_prometheus(seeded, client):
     body = snapshot.get_json()
     assert "hosts" in body
     assert "services" in body
-    assert body["kpis"]["servers"] == 4
+    assert body["kpis"]["servers"] == 5
     assert "issues" in body
     events = client.get("/dashboard/events/WEB01")
     assert events.status_code == 200
     assert events.get_json()["host"]["name"] == "WEB01"
-    for path in ["/servers/", "/alerts/", "/audit/"]:
+    for path in ["/servers/", "/alerts/", "/incidents/"]:
         assert client.get(path).status_code == 200
+    assert client.get("/audit/").status_code == 403

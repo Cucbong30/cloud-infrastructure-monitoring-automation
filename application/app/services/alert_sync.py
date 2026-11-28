@@ -46,6 +46,10 @@ def sync_alerts(client=None):
             job = maybe_remediate(alert)
             if job is not None:
                 remediated += 1
+        elif outcome == "resolved" and alert is not None:
+            from app.services.remediation import settle_cleared_alert
+
+            settle_cleared_alert(alert)
 
     resolved += _resolve_missing(seen)
     db.session.commit()
@@ -132,6 +136,9 @@ def _resolve_missing(seen):
         if alert.fingerprint not in seen:
             alert.status = "resolved"
             alert.resolved_at = alert.resolved_at or utcnow()
+            from app.services.remediation import settle_cleared_alert
+
+            settle_cleared_alert(alert)
             count += 1
     return count
 

@@ -1,0 +1,36 @@
+---
+- name: Reboot AZURE01
+  hosts: AZURE01
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Reboot server
+      ansible.builtin.reboot:
+        reboot_timeout: 300
+        connect_timeout: 10
+        test_command: whoami
+
+    - name: Verify Nginx is active
+      ansible.builtin.command: systemctl is-active nginx
+      register: nginx_status
+      changed_when: false
+
+    - name: Verify Node Exporter is active
+      ansible.builtin.command: systemctl is-active node_exporter
+      register: node_exporter_status
+      changed_when: false
+
+    - name: Verify HTTP port 80
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 80
+        timeout: 30
+      delegate_to: localhost
+
+    - name: Verify Node Exporter port 9100
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 9100
+        timeout: 30
+      delegate_to: localhost

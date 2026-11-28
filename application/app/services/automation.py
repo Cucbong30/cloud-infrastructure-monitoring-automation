@@ -7,7 +7,7 @@ from app.executors.ansible import playbook_failure_stage
 from app.executors.base import ExecutionResult
 from app.extensions import db
 from app.executors import EXECUTORS, get_executor
-from app.executors.actions import ACTIONS, DENIED_ACTIONS, SERVICE_LABELS
+from app.executors.actions import ACTIONS, DENIED_ACTIONS, SERVICE_LABELS, action_risk
 from app.executors.ansible import allowed_parameters
 from app.models import AutomationJob, Server, User, utcnow
 from app.services.audit import record
@@ -384,6 +384,35 @@ def queue_and_dispatch(
 ):
     server = db.session.get(Server, server_id)
     if server is not None:
+        from app.models import Alert
+        from app.services.remediation import resolve_plan
+
+        alert = db.session.get(Alert, alert_id) if alert_id else None
+        plan = resolve_plan(server, alert, requested_action=action_key)
+        if plan["blocked"]:
+            reason = refuse_unreachable_management(
+                server,
+                action_key=action_key,
+                actor=actor,
+                alert_id=alert_id,
+            ) or (plan["refusal"] or {}).get("message")
+            raise RemediationUnavailable(reason or "Management channel is down.")
+        if plan["investigate"] or not plan.get("action_key"):
+            raise RemediationUnavailable("Cause was not identified. No remediation action was started.")
+        if plan["action_key"] != action_key:
+            action_key = plan["action_key"]
+            parameters = plan["parameters"]
+    if server is not None and action_risk(action_key) != "low":
+        from app.services.approval import ApprovalForbidden, ApprovalPending, can_request, open_request
+
+        if not can_request(actor, action_key):
+            from app.services.remediation import _deny_request
+
+            _deny_request(server, action_key, actor)
+            role = (getattr(actor, "role", None) or "unknown").capitalize()
+            raise ApprovalForbidden(f"Permission denied for {role} role")
+        raise ApprovalPending(open_request(server, action_key, parameters, actor, alert_id))
+    if server is not None:
         reason = refuse_unreachable_management(
             server,
             action_key=action_key,
@@ -412,10 +441,38 @@ def retry_job(job_id, actor):
         raise AutomationRejected("Only a failed job can be retried.")
     parameters = json.loads(old.parameters_json or "{}")
     server = db.session.get(Server, old.server_id)
+    action_key = old.action_key
+    if server is not None:
+        from app.models import Alert
+        from app.services.remediation import resolve_plan
+
+        alert = db.session.get(Alert, old.alert_id) if old.alert_id else None
+        plan = resolve_plan(server, alert, requested_action=action_key)
+        if plan["blocked"]:
+            reason = refuse_unreachable_management(
+                server,
+                action_key=action_key,
+                actor=actor,
+                alert_id=old.alert_id,
+            ) or (plan["refusal"] or {}).get("message")
+            raise RemediationUnavailable(reason or "Management channel is down.")
+        if plan.get("action_key") and plan["action_key"] != action_key:
+            action_key = plan["action_key"]
+            parameters = plan["parameters"]
+    if server is not None and action_risk(action_key) != "low":
+        from app.services.approval import ApprovalForbidden, ApprovalPending, can_request, open_request
+
+        if not can_request(actor, action_key):
+            from app.services.remediation import _deny_request
+
+            _deny_request(server, action_key, actor)
+            role = (getattr(actor, "role", None) or "unknown").capitalize()
+            raise ApprovalForbidden(f"Permission denied for {role} role")
+        raise ApprovalPending(open_request(server, action_key, parameters, actor, old.alert_id))
     if server is not None:
         reason = refuse_unreachable_management(
             server,
-            action_key=old.action_key,
+            action_key=action_key,
             actor=actor,
             alert_id=old.alert_id,
         )
@@ -423,14 +480,14 @@ def retry_job(job_id, actor):
             raise RemediationUnavailable(reason)
         from app.services.remediation import _action_is_running, _skip_duplicate
 
-        if _action_is_running(server.id, old.action_key):
+        if _action_is_running(server.id, action_key):
             user = db.session.get(User, getattr(actor, "id", None)) if getattr(actor, "id", None) else None
             email = ((user.email if user is not None else None) or "").strip()
             triggered_by = email or (user.username if user is not None else "") or "unknown"
-            return _skip_duplicate(server, old.action_key, user, triggered_by, None if user is None else user.role)
+            return _skip_duplicate(server, action_key, user, triggered_by, None if user is None else user.role)
     job = enqueue_job(
         server_id=old.server_id,
-        action_key=old.action_key,
+        action_key=action_key,
         parameters=parameters,
         trigger_source="manual",
         requested_by=getattr(actor, "id", None),

@@ -2,11 +2,29 @@
 {% block title %}Audit log · Operations Portal{% endblock %}
 {% block content %}
 <h1 class="h3 mb-3">Audit log</h1>
-<p class="text-secondary">Records are append-only. This page does not edit or delete them.</p>
+<p class="text-secondary">Records are append-only. Filter by the date shown in the table, which is ICT (UTC+7).</p>
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-md-3">
+    <label class="form-label" for="audit-from">From</label>
+    <input class="form-control" id="audit-from" type="date" name="from" value="{{ date_from }}">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label" for="audit-to">To</label>
+    <input class="form-control" id="audit-to" type="date" name="to" value="{{ date_to }}">
+  </div>
+  <div class="col-md-3">
+    <label class="form-label" for="audit-action">Action</label>
+    <input class="form-control" id="audit-action" name="action" value="{{ action }}" placeholder="approval.requested">
+  </div>
+  <div class="col-md-3">
+    <button class="btn btn-primary" type="submit">Filter</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('audit.index') }}">Clear</a>
+  </div>
+</form>
 <div class="table-responsive card">
   <table class="table mb-0">
     <thead>
-      <tr><th>When</th><th>Actor</th><th>Role</th><th>Target</th><th>Action</th><th>Mode</th><th>Execution</th><th>Verification</th><th>Final status</th><th>Reason</th></tr>
+      <tr><th>When</th><th>Actor</th><th>Role</th><th>Request</th><th>Requester</th><th>Approver</th><th>Target</th><th>Action</th><th>Risk</th><th>Decision</th><th>Incident</th><th>Job</th><th>Mode</th><th>Execution</th><th>Verification</th><th>Final status</th><th>Reason</th></tr>
     </thead>
     <tbody>
       {% for entry in entries %}
@@ -15,8 +33,15 @@
           <td>{{ entry.created_at | dt }}</td>
           <td>{{ facts.actor }}</td>
           <td>{{ facts.role }}</td>
+          <td>{{ facts.request_id }}</td>
+          <td>{{ facts.requester }}</td>
+          <td>{{ facts.approver }}</td>
           <td>{{ facts.target }}</td>
           <td><code>{{ facts.action }}</code></td>
+          <td>{{ facts.risk }}</td>
+          <td>{{ facts.decision }}</td>
+          <td>{{ facts.incident_id }}</td>
+          <td>{{ facts.job_id }}</td>
           <td>{{ facts.mode }}</td>
           <td>{{ facts.execution_result }}</td>
           <td>{{ facts.verification_result }}</td>
@@ -24,7 +49,7 @@
           <td>{{ facts.reason }}</td>
         </tr>
       {% else %}
-        <tr><td colspan="10" class="text-secondary">No audit records.</td></tr>
+        <tr><td colspan="17" class="text-secondary">No audit records for this filter.</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -158,6 +158,13 @@ def allowed_parameters(server, action_key, parameters):
     return all(parameters.get(key) == value for key, value in required.items())
 
 
+def _playbook_timeout(config, action_key):
+    normal = int(config.get("ANSIBLE_TIMEOUT_SECONDS") or 90)
+    if action_key == "reboot_server":
+        return int(config.get("REBOOT_ANSIBLE_TIMEOUT_SECONDS") or 420)
+    return normal
+
+
 def run_controller_playbook(*, user, host, key_file, playbook, timeout):
     started = utcnow()
     allowed = {item.playbook for item in ACTIONS.values()}
@@ -231,7 +238,7 @@ class AnsibleRunnerExecutor(AutomationExecutor):
                 host=(config.get("ANSIBLE_CONTROLLER_HOST") or CONTROLLER_HOST).strip(),
                 key_file=(config.get("ANSIBLE_CONTROLLER_KEY") or "").strip(),
                 playbook=playbook,
-                timeout=int(config.get("ANSIBLE_TIMEOUT_SECONDS") or 90),
+                timeout=_playbook_timeout(config, action_definition.key),
             )
         except Exception:
             return ExecutionResult(False, 1, "Ansible failed before the playbook finished.", started, utcnow())

@@ -12,6 +12,7 @@
 </div>
 <div class="card mb-4"><div class="card-body">
   <dl class="row mb-0">
+    <dt class="col-sm-3">Job ID</dt><dd class="col-sm-9">{{ job.id }}</dd>
     <dt class="col-sm-3">Target</dt>
     <dd class="col-sm-9">{% if job.server %}<a href="{{ url_for('servers.detail', server_id=job.server.id) }}">{{ job.server.name }}</a> <span class="text-secondary">{{ job.server.ip_address }} · {{ job.server.environment }} · {{ job.server.provider }}</span>{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Action</dt><dd class="col-sm-9"><code>{{ job.action_key }}</code></dd>
@@ -19,7 +20,13 @@
     <dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(job_mode(job)) }}">{{ job_mode(job) }}</span></dd>
     <dt class="col-sm-3">Triggered by</dt>
     <dd class="col-sm-9">{% set mode_label = job_mode(job) %}{{ job.triggered_by or ('SYSTEM' if mode_label == 'AUTO' else '—') }}{% if job.user_role %} · {{ job.user_role }}{% elif mode_label == 'AUTO' %} · SYSTEM{% endif %}</dd>
-    <dt class="col-sm-3">Risk</dt><dd class="col-sm-9">{{ action_risk(job.action_key)|upper }}</dd>
+    <dt class="col-sm-3">Risk</dt><dd class="col-sm-9"><span class="badge text-bg-{{ badge_class(action_risk(job.action_key)|upper) }}">{{ action_risk(job.action_key)|upper }}</span></dd>
+    <dt class="col-sm-3">Approval Required</dt><dd class="col-sm-9">{{ 'Yes' if action_risk(job.action_key) != 'low' else 'No' }}</dd>
+    <dt class="col-sm-3">Approval Status</dt>
+    <dd class="col-sm-9">{% if approval %}<a href="{{ url_for('automation.approval_detail', request_id=approval.id) }}"><span class="badge text-bg-{{ badge_class(approval.status) }}">{{ approval.status }}</span></a>{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Requester</dt><dd class="col-sm-9">{% if approval %}{{ approval.requester_name }} · {{ approval.requester_role }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Approver</dt><dd class="col-sm-9">{% if approval and approval.approver_name %}{{ approval.approver_name }} · {{ approval.approver_role }}{% else %}—{% endif %}</dd>
+    <dt class="col-sm-3">Decision</dt><dd class="col-sm-9">{% if approval and approval.decision %}{{ approval.decision }}{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Trigger</dt>
     <dd class="col-sm-9">
       <span class="badge text-bg-{{ badge_class(trigger_label(job)) }}">{{ trigger_label(job) }}</span>
@@ -65,8 +72,8 @@
     <dt class="col-sm-3">Duration</dt>
     <dd class="col-sm-9">{% set seconds = job_duration_seconds(job) %}{% if seconds is not none %}{{ seconds }}s{% else %}—{% endif %}</dd>
     <dt class="col-sm-3">Exit code</dt><dd class="col-sm-9">{% if job.exit_code is not none %}{{ job.exit_code }}{% else %}—{% endif %}</dd>
-    <dt class="col-sm-3">Execution</dt><dd class="col-sm-9">{{ execution_result_label(job) }}</dd>
-    <dt class="col-sm-3">Verification</dt>
+    <dt class="col-sm-3">Execution Status</dt><dd class="col-sm-9">{{ execution_result_label(job) }}</dd>
+    <dt class="col-sm-3">Verification Status</dt>
     <dd class="col-sm-9">
       {% if verification_label(job) %}
         <span class="badge text-bg-{{ badge_class(job_outcome_label(job)) }}">{{ verification_label(job) }}</span>

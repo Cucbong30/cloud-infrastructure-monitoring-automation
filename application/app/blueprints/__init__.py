@@ -1,4 +1,5 @@
 from app.blueprints.alerts import bp as alerts_bp
+from app.blueprints.incidents import bp as incidents_bp
 from app.blueprints.audit import bp as audit_bp
 from app.blueprints.auth import bp as auth_bp
 from app.blueprints.automation import bp as automation_bp
@@ -13,6 +14,7 @@ def register_blueprints(app):
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(servers_bp)
     app.register_blueprint(alerts_bp)
+    app.register_blueprint(incidents_bp)
     app.register_blueprint(automation_bp)
     app.register_blueprint(audit_bp)
     app.register_blueprint(users_bp)

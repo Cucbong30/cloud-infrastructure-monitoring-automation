@@ -8,18 +8,35 @@ from sqlalchemy import select
 from app.extensions import db
 from app.models import Alert, AuditLog, AutomationJob, Incident, Server, utcnow
 from app.services.audit import record
-from app.services.automation import AutomationRejected, dispatch, enqueue_job
+from app.services.automation import AutomationRejected, RemediationUnavailable, dispatch, enqueue_job
 from app.executors.actions import SERVICE_LABELS, action_risk
+from app.services.runbooks import (
+    classify_incident,
+    incident_signal,
+    observed_docker_active,
+    probe_incident_type,
+)
 from app.services.checks import management_refusal, refuse_unreachable_management, verification_notice
 from app.presentation import format_clock
 from app.services.metrics import HOST_CHECKS
 
-LAB_ACTIONS = {
-    "WEB01": ("restart_nginx", {}, "Restart Nginx"),
-    "APP01": ("restart_container", {"container_name": "app01-web"}, "Restart container"),
-    "WIN01": ("restart_windows_exporter", {"service_name": "windows_exporter"}, "Restart Windows Exporter"),
-    "AZURE01": ("restart_nginx", {}, "Restart Nginx"),
+TARGET_ACTIONS = {
+    "WEB01": [("restart_nginx", {}, "Restart Nginx")],
+    "APP01": [
+        ("restart_container", {"container_name": "app01-web"}, "Restart container"),
+        ("restart_docker_service", {}, "Restart Docker"),
+    ],
+    "WIN01": [("restart_windows_exporter", {"service_name": "windows_exporter"}, "Restart Windows Exporter")],
+    "AZURE01": [
+        ("restart_nginx", {}, "Restart Nginx"),
+        ("reboot_server", {}, "Reboot server"),
+    ],
 }
+LAB_ACTIONS = {name: items[0] for name, items in TARGET_ACTIONS.items()}
+
+
+def actions_for(server_name):
+    return list(TARGET_ACTIONS.get((server_name or "").upper(), []))
 _AUTO_LOCK = threading.Lock()
 _AUTO_RUNNING = set()
 
@@ -61,30 +78,81 @@ def blocked_reason(server, alert=None):
     return unreachable_message(name)
 
 
+def docker_service_active(server, alert=None):
+    """False when this host already reports the Docker service down. Otherwise the caller may pass a check."""
+    checker = current_app.config.get("DOCKER_ACTIVE_CHECK")
+    if alert is not None and incident_signal(alert.alert_name) == "docker_service_down":
+        return False
+    if checker is not None:
+        return bool(checker(server))
+    if server is None:
+        return True
+    rows = db.session.scalars(
+        select(Alert).where(Alert.server_id == server.id, Alert.status == "firing")
+    ).all()
+    return not any(incident_signal(row.alert_name) == "docker_service_down" for row in rows)
+
+
+def resolve_plan(server, alert=None, requested_action=None):
+    """Shared pre-check for auto, manual, and retry."""
+    refusal = None if server is None else management_refusal(server, requested_action)
+    plan = classify_incident(
+        None if server is None else server.name,
+        None if alert is None else alert.alert_name,
+        management_down=False,
+        docker_active=docker_service_active(server, alert),
+        requested_action=requested_action,
+    )
+    plan["refusal"] = refusal
+    plan["blocked"] = refusal is not None and bool(plan.get("action_key"))
+    plan["parameters"] = {}
+    plan["label"] = plan["incident_type"]
+    spec = _action_spec(None if server is None else server.name, plan.get("action_key"))
+    if spec is not None:
+        plan["parameters"] = dict(spec[1])
+        plan["label"] = spec[2]
+    return plan
+
+
+def _action_spec(server_name, action_key):
+    if not action_key:
+        return None
+    return next((item for item in TARGET_ACTIONS.get((server_name or "").upper(), []) if item[0] == action_key), None)
+
+
 def suggest_remediation(server, alert=None):
+    """Return the mapped action after the cause pre-check. Unknown and blocked causes return None."""
     if server is None or not server.is_active:
         return None
     if alert is not None and alert.status == "resolved":
         return None
-    spec = LAB_ACTIONS.get((server.name or "").upper())
-    if spec is None:
+    requested = None
+    if alert is None:
+        requested = (LAB_ACTIONS.get((server.name or "").upper()) or [None])[0]
+    plan = resolve_plan(server, alert, requested_action=requested)
+    if plan["blocked"]:
+        action_key = requested or (LAB_ACTIONS.get((server.name or "").upper()) or [None])[0]
+        spec = _action_spec(server.name, action_key)
+        if spec is None:
+            return None
+        return {
+            "action_key": spec[0],
+            "parameters": dict(spec[1]),
+            "label": spec[2],
+            "incident_type": "management_unavailable",
+        }
+    if plan["investigate"] or not plan.get("action_key"):
         return None
-    if alert is not None and alert.alert_name not in ALERTS_FOR.get(server.name.upper(), set()):
-        return None
-    action_key, parameters, label = spec
-    return {"action_key": action_key, "parameters": dict(parameters), "label": label}
-
-
-_LIVE_ALERT_NAMES = {
-    "WEB01": "NginxDown",
-    "APP01": "container_down",
-    "WIN01": "WindowsExporterDown",
-    "AZURE01": "NginxDown",
-}
+    return {
+        "action_key": plan["action_key"],
+        "parameters": plan["parameters"],
+        "label": plan["label"],
+        "incident_type": plan["incident_type"],
+    }
 
 
 def consider_live_hosts(hosts):
-    """A probed lab outage uses the same incident flow as a firing alert."""
+    """Name the cause from the probe, then let the runbook choose the action. No default LOW action."""
     if not current_app.config.get("AUTO_REMEDIATION_ENABLED"):
         return []
     opened = []
@@ -95,28 +163,32 @@ def consider_live_hosts(hosts):
 
             if not azure_settings()["configured"]:
                 continue
-        spec = LAB_ACTIONS.get(name)
-        alert_name = _LIVE_ALERT_NAMES.get(name)
-        if spec is None or alert_name is None:
+        if not any(row["host"] == name for row in _runbook_rows()):
             continue
         server = db.session.scalar(select(Server).where(Server.name == name))
         if server is None:
             continue
-        action_key = spec[0]
-        if _probe_is_down(name, host):
-            opened.append(_ensure_live_alert(server, alert_name))
+        incident_type = probe_incident_type(host)
+        if incident_type is None:
+            _settle_live_host(server)
             continue
-        if _action_is_running(server.id, action_key):
+        observed = observed_docker_active(host)
+        if incident_type == "container_down" and observed is None:
+            docker_active = False
+        else:
+            docker_active = True if observed is None else observed
+        plan = classify_incident(name, incident_type, docker_active=docker_active)
+        if not plan.get("action_key"):
             continue
-        _resolve_live_alert(server, alert_name)
-        _close_restored_incident(server, action_key)
+        _retire_other_live_alerts(server, plan["incident_type"])
+        opened.append(_ensure_live_alert(server, plan["incident_type"]))
     return opened
 
 
-def _probe_is_down(name, host):
-    if name == "WIN01":
-        return host.get("exporter") == "DOWN"
-    return any(item.get("status") == "DOWN" for item in host.get("services") or [])
+def _runbook_rows():
+    from app.services.runbooks import RUNBOOK_MAP
+
+    return RUNBOOK_MAP
 
 
 DUPLICATE_REASON = "An active remediation job already exists for this target and action."
@@ -135,13 +207,67 @@ def _action_is_running(server_id, action_key):
     )
 
 
-def trigger_manual_remediation(server, action_key, parameters, actor, alert_id=None):
-    """One operator click. Same checks as auto, and a manual run does not retry itself."""
+def _auto_actor():
+    class _Actor:
+        id = None
+        email = ""
+        username = "SYSTEM"
+        role = "SYSTEM"
+
+    return _Actor()
+
+
+def _deny_request(server, action_key, actor):
+    role = (getattr(actor, "role", None) or "unknown").capitalize()
+    record(
+        "permission.denied",
+        "approval_request",
+        None,
+        {
+            "message": f"Permission denied for {role} role",
+            "result": "DENIED",
+            "risk": action_risk(action_key).upper(),
+            "action": action_key,
+            "action_key": action_key,
+            "target": None if server is None else server.name,
+            "mode": "MANUAL",
+            "trigger": "manual",
+            "playbook_executed": False,
+            "execution_result": "NOT_RUN",
+            "verification_result": "NOT_RUN",
+        },
+        user_id=getattr(actor, "id", None),
+    )
+
+
+def trigger_manual_remediation(
+    server, action_key, parameters, actor, alert_id=None, approval_request=None, bound_incident=None
+):
+    """One operator click. MEDIUM and HIGH stop until a permitted approver accepts."""
     from app.models import User
 
     if server is None or not getattr(server, "is_active", False):
         raise AutomationRejected("Server is not available.")
     actor_row = db.session.get(User, getattr(actor, "id", None)) if getattr(actor, "id", None) else None
+    from app.services.approval import ApprovalForbidden, can_request
+
+    alert = db.session.get(Alert, alert_id) if alert_id else None
+    plan = resolve_plan(server, alert, requested_action=action_key)
+    if plan["blocked"]:
+        raise RemediationUnavailable((plan["refusal"] or {}).get("message") or "Management channel is down.")
+    if plan["investigate"] or not plan.get("action_key"):
+        raise RemediationUnavailable("Cause was not identified. No remediation action was started.")
+    if plan["action_key"] != action_key:
+        action_key = plan["action_key"]
+        parameters = plan["parameters"]
+    if not can_request(actor_row or actor, action_key):
+        _deny_request(server, action_key, actor_row or actor)
+        raise ApprovalForbidden(f"Permission denied for {(getattr(actor_row or actor, 'role', None) or 'unknown').capitalize()} role")
+    _bind_incident(bound_incident, server, action_key)
+    if approval_request is None and action_risk(action_key) != "low":
+        from app.services.approval import ApprovalPending, open_request
+
+        raise ApprovalPending(open_request(server, action_key, parameters, actor_row or actor, alert_id))
     email = ((actor_row.email if actor_row is not None else None) or "").strip()
     triggered_by = email or (actor_row.username if actor_row is not None else "") or "unknown"
     role = None if actor_row is None else actor_row.role
@@ -158,9 +284,26 @@ def trigger_manual_remediation(server, action_key, parameters, actor, alert_id=N
         incident_id=incident.id,
         attempt=1,
     )
+    from app.services.incidents import enter_progress
+
+    enter_progress(incident, f"{action_key} started.", actor=actor_row, job_id=job.id)
+    db.session.commit()
     job = dispatch(job.id, actor=actor_row)
     _apply_manual_incident(incident, job)
     return job
+
+
+def _bind_incident(incident, server, action_key):
+    """Keep the job and approval on the incident the operator already opened."""
+    if incident is None or server is None or getattr(incident, "server_id", None) != server.id:
+        return
+    if incident.status not in {"open", "acknowledged"}:
+        return
+    other = _current_incident(server.id, action_key)
+    if other is not None and other.id != incident.id:
+        return
+    incident.action_key = action_key
+    db.session.commit()
 
 
 def _skip_duplicate(server, action_key, actor_row, triggered_by, role):
@@ -217,13 +360,16 @@ def _skip_duplicate(server, action_key, actor_row, triggered_by, role):
 
 def _open_manual_incident(server, action_key, alert_id):
     current = _current_incident(server.id, action_key)
-    if current is not None and not _incident_is_terminal(current):
+    if current is not None:
         return current
+    alert = db.session.get(Alert, alert_id) if alert_id else None
     incident = Incident(
         server_id=server.id,
         alert_id=alert_id,
         action_key=action_key,
         status="open",
+        severity=None if alert is None else alert.severity,
+        remediation_type="manual",
         retry_count=0,
         manual_required=False,
         verification_failed=False,
@@ -232,32 +378,40 @@ def _open_manual_incident(server, action_key, alert_id):
     )
     db.session.add(incident)
     db.session.commit()
+    from app.services.incidents import add_event
+
+    add_event(incident, "detected", "Service unavailable")
+    db.session.commit()
     return incident
 
 
 def _apply_manual_incident(incident, job):
     if incident is None or job is None:
         return
+    from app.services.incidents import add_event, release_work
+
     final = job.final_status
     if final == "SUCCESS":
-        incident.status = "resolved"
-        incident.closed_at = utcnow()
+        add_event(incident, "resolved", "Recovery confirmed", to_status="resolved", job_id=job.id)
         incident.reason = "success"
     elif final == "VERIFICATION_FAILED":
         incident.verification_failed = True
         incident.manual_required = True
         incident.blocked = False
         incident.reason = "verification_failed"
+        release_work(incident, "verification_failed", "Post-check failed.", job_id=job.id)
     elif final == "EXECUTION_FAILED":
         incident.manual_required = True
         incident.verification_failed = False
         incident.blocked = False
         incident.reason = "execution_failed"
+        release_work(incident, "execution_failed", "Remediation command failed.", job_id=job.id)
     elif final == "MANAGEMENT_BLOCKED":
         incident.blocked = True
         incident.manual_required = True
         incident.verification_failed = False
         incident.reason = "management_channel_unavailable"
+        release_work(incident, "blocked", "SSH or WinRM was down.", job_id=job.id)
     db.session.commit()
 
 
@@ -316,12 +470,56 @@ def _close_restored_incident(server, action_key):
         return None
     alert = db.session.get(Alert, incident.alert_id) if incident.alert_id else None
     if alert is None:
-        incident.status = "resolved"
-        incident.closed_at = utcnow()
+        from app.services.incidents import add_event
+
+        add_event(incident, "resolved", "Service restored", to_status="resolved")
         incident.reason = "service restored"
         db.session.commit()
         return incident
     return _resolve_incident(incident, server, alert, "service restored")
+
+
+def _settle_live_host(server):
+    """The probe is healthy. Close only a live alert whose action is not still running."""
+    rows = db.session.scalars(
+        select(Alert).where(
+            Alert.server_id == server.id,
+            Alert.source == "live",
+            Alert.status == "firing",
+        )
+    ).all()
+    for alert in rows:
+        plan = classify_incident(server.name, alert.alert_name)
+        action_key = plan.get("action_key")
+        if action_key and _action_is_running(server.id, action_key):
+            continue
+        alert.status = "resolved"
+        alert.resolved_at = utcnow()
+        if action_key:
+            _close_restored_incident(server, action_key)
+    if rows:
+        db.session.commit()
+
+
+def _retire_other_live_alerts(server, cause):
+    """Drop a stale live cause so the scheduler cannot run the previous LOW action."""
+    rows = db.session.scalars(
+        select(Alert).where(
+            Alert.server_id == server.id,
+            Alert.source == "live",
+            Alert.status == "firing",
+        )
+    ).all()
+    changed = False
+    for alert in rows:
+        current = incident_signal(alert.alert_name) or alert.alert_name
+        if current == cause:
+            continue
+        alert.status = "resolved"
+        alert.resolved_at = utcnow()
+        changed = True
+    if changed:
+        db.session.commit()
 
 
 def _resolve_live_alert(server, alert_name):
@@ -386,8 +584,8 @@ def maybe_remediate(alert):
             },
         )
         return None
-    suggestion = suggest_remediation(server, alert)
-    if suggestion is None:
+    plan = resolve_plan(server, alert)
+    if plan["investigate"] or not plan.get("action_key"):
         if _is_diagnostic(alert):
             _note_once(
                 "auto_remediation.skipped",
@@ -401,6 +599,8 @@ def maybe_remediate(alert):
                     "reason": "diagnostic",
                 },
             )
+        elif (server.name or "").upper() in TARGET_ACTIONS:
+            _open_investigation(server, alert)
         else:
             _note_manual(
                 alert,
@@ -408,16 +608,14 @@ def maybe_remediate(alert):
                 "Reason: no allow-listed action. MANUAL_REQUIRED. This alert has no allow-listed remediation action.",
             )
         return None
+    suggestion = {
+        "action_key": plan["action_key"],
+        "parameters": plan["parameters"],
+        "label": plan["label"],
+        "incident_type": plan["incident_type"],
+    }
     action_key = suggestion["action_key"]
-    risk = action_risk(action_key)
-    if risk != "low":
-        _note_manual(
-            alert,
-            action_key,
-            f"Reason: risk. MANUAL_REQUIRED. {action_key} is {risk} risk, so auto-remediation did not run.",
-        )
-        return None
-    up, up_detail = _service_already_up(server, action_key)
+    up, _up_detail = _service_already_up(server, action_key)
     if up:
         _resolve_open_incident(server, action_key, alert, "service restored")
         _note_once(
@@ -436,6 +634,35 @@ def maybe_remediate(alert):
                 "trigger": "auto",
                 "result": "SKIPPED",
             },
+        )
+        return None
+    if plan["blocked"]:
+        incident = _current_incident(server.id, action_key)
+        if incident is None:
+            incident = _create_incident(server, alert, action_key)
+        _mark_blocked(incident, server, alert, action_key, plan["refusal"] or {})
+        return None
+    risk = action_risk(action_key)
+    if risk == "high":
+        if _current_incident(server.id, action_key) is None:
+            _create_incident(server, alert, action_key)
+        _note_manual(
+            alert,
+            action_key,
+            (
+                f"Reason: risk. MANUAL_REQUIRED. {action_key} is HIGH. "
+                "An admin must request and approve it. Auto-remediation did not run."
+            ),
+        )
+        return None
+    if risk != "low":
+        from app.services.approval import open_request
+
+        open_request(server, action_key, suggestion["parameters"], _auto_actor(), alert.id)
+        _note_manual(
+            alert,
+            action_key,
+            f"Reason: risk. MANUAL_REQUIRED. {action_key} is {risk} risk, so auto-remediation did not run.",
         )
         return None
     incident = _current_incident(server.id, action_key)
@@ -584,7 +811,7 @@ def _current_incident(server_id, action_key):
         .where(
             Incident.server_id == server_id,
             Incident.action_key == action_key,
-            Incident.status == "open",
+            Incident.status.in_(("open", "acknowledged", "in_progress")),
         )
         .order_by(Incident.id.desc())
     )
@@ -614,6 +841,8 @@ def _create_incident(server, alert, action_key):
         alert_id=alert.id,
         action_key=action_key,
         status="open",
+        severity=alert.severity,
+        remediation_type="automatic",
         retry_count=0,
         manual_required=False,
         verification_failed=False,
@@ -645,14 +874,76 @@ def _create_incident(server, alert, action_key):
         },
         system=True,
     )
+    from app.services.incidents import add_event
+
+    add_event(incident, "detected", "Service unavailable")
+    db.session.commit()
     return incident
 
 
-def _resolve_incident(incident, server, alert, reason):
-    if incident is None or incident.status == "resolved":
+def settle_cleared_alert(alert):
+    """An investigation has no playbook. It resolves only after its alert has cleared."""
+    if alert is None or alert.status != "resolved" or alert.server_id is None:
         return None
-    incident.status = "resolved"
-    incident.closed_at = utcnow()
+    incident = db.session.scalar(
+        select(Incident).where(
+            Incident.alert_id == alert.id,
+            Incident.action_key == "investigate",
+            Incident.status.in_(("open", "acknowledged")),
+        )
+    )
+    if incident is None:
+        return None
+    server = db.session.get(Server, alert.server_id)
+    return _resolve_incident(incident, server, alert, "alert cleared", "The reported condition cleared.")
+
+
+def _open_investigation(server, alert):
+    """Unknown cause stays open. No playbook and no approval request are created."""
+    current = _current_incident(server.id, "investigate")
+    if current is not None:
+        return current
+    incident = Incident(
+        server_id=server.id,
+        alert_id=alert.id,
+        action_key="investigate",
+        status="open",
+        severity=alert.severity,
+        remediation_type="manual",
+        retry_count=0,
+        manual_required=True,
+        verification_failed=False,
+        blocked=False,
+        reason="manual_investigation",
+        opened_at=utcnow(),
+    )
+    db.session.add(incident)
+    db.session.commit()
+    from app.services.incidents import add_event
+
+    add_event(
+        incident,
+        "manual_investigation",
+        "Cause was not identified. No remediation action was started.",
+    )
+    db.session.commit()
+    _note_manual(
+        alert,
+        "investigate",
+        (
+            "Reason: manual investigation. MANUAL_REQUIRED. "
+            f"{alert.alert_name} does not match a runbook, so no action was started."
+        ),
+    )
+    return incident
+
+
+def _resolve_incident(incident, server, alert, reason, message="Recovery confirmed"):
+    if incident is None or incident.status in {"resolved", "closed"}:
+        return None
+    from app.services.incidents import add_event
+
+    add_event(incident, "resolved", message, to_status="resolved")
     incident.reason = reason
     db.session.commit()
     record(
@@ -728,6 +1019,10 @@ def _mark_blocked(incident, server, alert, action_key, refusal):
     _note_once("management.check", alert, payload)
     _note_once("auto_remediation.blocked", alert, payload)
     _note_manual(alert, action_key, message)
+    from app.services.incidents import release_work
+
+    release_work(incident, "blocked", "SSH or WinRM was down.")
+    db.session.commit()
 
 
 def _clear_channel_block(incident):
@@ -818,6 +1113,9 @@ def _continue_incident(server, alert, suggestion, incident):
         incident.verification_failed = False
         incident.blocked = False
         incident.reason = "retry_limit"
+        from app.services.incidents import release_work
+
+        release_work(incident, "execution_failed", "Retry limit reached.")
         db.session.commit()
         _note_manual(
             alert,
@@ -837,8 +1135,57 @@ def _stamp(job, final_status, reason):
     db.session.commit()
 
 
+def _hold_for_plan(server, alert, incident, plan):
+    """Stop a repeat of the previous action when the shared map now says something else."""
+    from app.services.incidents import release_work
+
+    if plan["blocked"]:
+        if incident is not None:
+            _mark_blocked(incident, server, alert, incident.action_key, plan["refusal"] or {})
+        return
+    if plan.get("action_key") and incident is not None and plan["action_key"] != incident.action_key:
+        release_work(
+            incident,
+            "blocked",
+            "Docker is inactive, so the container restart was not repeated.",
+        )
+        if action_risk(plan["action_key"]) == "medium":
+            from app.services.approval import open_request
+
+            open_request(server, plan["action_key"], plan["parameters"], _auto_actor(), None if alert is None else alert.id)
+        db.session.commit()
+        return
+    if incident is not None:
+        release_work(incident, "manual_investigation", "Cause was not identified. No remediation action was started.")
+        db.session.commit()
+
+
 def _start_auto(server, alert, suggestion, incident, retry_of=None):
     action_key = suggestion["action_key"]
+    plan = resolve_plan(server, alert, requested_action=action_key)
+    if plan["blocked"] or plan["investigate"] or plan.get("action_key") != action_key:
+        _hold_for_plan(server, alert, incident, plan)
+        return None
+    if action_risk(action_key) == "high":
+        _note_manual(
+            alert,
+            action_key,
+            (
+                f"Reason: risk. MANUAL_REQUIRED. {action_key} is HIGH. "
+                "An admin must request and approve it. Auto-remediation did not run."
+            ),
+        )
+        return None
+    if action_risk(action_key) != "low":
+        from app.services.approval import open_request
+
+        open_request(server, action_key, plan.get("parameters") or suggestion["parameters"], _auto_actor(), alert.id)
+        _note_manual(
+            alert,
+            action_key,
+            f"Reason: risk. MANUAL_REQUIRED. {action_key} is {action_risk(action_key)} risk, so auto-remediation did not run.",
+        )
+        return None
     attempt = (incident.retry_count or 0) + 1
     details = _trace(
         server,
@@ -890,6 +1237,15 @@ def _start_auto(server, alert, suggestion, incident, retry_of=None):
         incident_id=incident.id,
         attempt=attempt,
     )
+    from app.services.incidents import enter_progress
+
+    enter_progress(
+        incident,
+        f"{action_key} started.",
+        job_id=job.id,
+        retry=retry_of is not None,
+    )
+    db.session.commit()
     record(
         "auto_remediation.started",
         "automation_job",
@@ -946,6 +1302,9 @@ def _finish_auto(job, server, alert, suggestion, incident):
             incident.blocked = True
             incident.manual_required = True
             incident.reason = "management_channel_unavailable"
+            from app.services.incidents import release_work
+
+            release_work(incident, "blocked", "SSH or WinRM was down.", job_id=job.id)
             db.session.commit()
         record(
             "auto_remediation.blocked",
@@ -971,6 +1330,9 @@ def _finish_auto(job, server, alert, suggestion, incident):
             incident.manual_required = True
             incident.blocked = False
             incident.reason = "verification_failed"
+            from app.services.incidents import release_work
+
+            release_work(incident, "verification_failed", "Post-check failed.", job_id=job.id)
             db.session.commit()
         record(
             "auto_remediation.executed",
@@ -1003,6 +1365,9 @@ def _finish_auto(job, server, alert, suggestion, incident):
     message = job.verification_detail or "The command failed before verification."
     if incident is not None and incident.retry_count < _max_retries():
         incident.retry_count += 1
+        from app.services.incidents import note_result
+
+        note_result(incident, "execution_failed", "Remediation command failed.", job_id=job.id)
         db.session.commit()
         _stamp(job, "EXECUTION_FAILED", "execution_failed")
         record(
@@ -1025,6 +1390,9 @@ def _finish_auto(job, server, alert, suggestion, incident):
         incident.verification_failed = False
         incident.blocked = False
         incident.reason = "retry_limit"
+        from app.services.incidents import release_work
+
+        release_work(incident, "execution_failed", "Retry limit reached.", job_id=job.id)
         db.session.commit()
     record(
         "auto_remediation.failed",
@@ -1087,20 +1455,21 @@ def _service_already_up(server, action_key):
         ok, detail = checker(server, action_key)
         return bool(ok), detail or ""
     from app.services.checks import service_probe
-    from app.services.probes import http_probe, tcp_probe
+    from app.services.probes import http_recovery, tcp_probe
 
     spec = service_probe(server, action_key)
     if spec is None:
         return False, ""
     kind, target, label = spec
     if kind == "http":
-        ok, latency = http_probe(target, timeout=2)
+        ok, detail = http_recovery(target, timeout=2)
     else:
         host, port = target
         ok, latency = tcp_probe(host, port, timeout=2)
+        detail = None if latency is None else f"{latency} ms"
     if not ok:
         return False, ""
-    return True, f"{label} is up ({latency} ms)."
+    return True, f"{label} is up ({detail})."
 
 
 def _auto_jobs_for_incident(alert, action_key):
@@ -1227,7 +1596,10 @@ def _note_once(action, alert, details):
         .order_by(AuditLog.id.desc())
     )
     if previous is not None and _message(previous) == details.get("message"):
-        return previous
+        started = _aware(getattr(alert, "starts_at", None))
+        noted = _aware(previous.created_at)
+        if started is None or noted is None or noted >= started:
+            return previous
     return record(action, "alert", alert.id, details, system=True)
 
 

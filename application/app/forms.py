@@ -25,6 +25,8 @@ ACTION_CHOICES = [
     ("restart_nginx", "Restart Nginx"),
     ("restart_container", "Restart container"),
     ("restart_windows_exporter", "Restart Windows Exporter"),
+    ("restart_docker_service", "Restart Docker"),
+    ("reboot_server", "Reboot server"),
 ]
 
 
@@ -84,6 +86,8 @@ SERVICE_CHOICES = [
     ("Nginx", "Nginx"),
     ("App", "App"),
     ("Windows Exporter", "Windows Exporter"),
+    ("Docker", "Docker"),
+    ("Host", "Host"),
 ]
 
 

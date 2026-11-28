@@ -2,7 +2,7 @@ import time
 
 from flask import current_app, g
 
-from app.services.probes import http_probe, tcp_probe
+from app.services.probes import http_recovery, tcp_probe
 
 MANAGEMENT_CHANNELS = {
     "WEB01": {"label": "SSH", "host": "192.168.10.11", "port": 22},
@@ -14,6 +14,8 @@ ACTION_CHANNELS = {
     "restart_nginx": "WEB01",
     "restart_container": "APP01",
     "restart_windows_exporter": "WIN01",
+    "restart_docker_service": "APP01",
+    "reboot_server": "AZURE01",
 }
 
 
@@ -40,6 +42,15 @@ SERVICE_CHECKS = {
     "restart_nginx": ("http", "http://192.168.10.11/", "Nginx :80"),
     "restart_container": ("http", "http://192.168.10.12:8080/", "App :8080"),
     "restart_windows_exporter": ("http", "http://192.168.10.13:9182/metrics", "Windows Exporter :9182"),
+    "restart_docker_service": ("http", "http://192.168.10.12:8080/", "App :8080"),
+}
+
+RECOVERY_CRITERIA = {
+    "restart_nginx": "Nginx HTTP 200",
+    "restart_container": "Application HTTP 200 on port 8080",
+    "restart_windows_exporter": "Metrics HTTP 200 on port 9182",
+    "restart_docker_service": "Docker active, container running, and HTTP 200",
+    "reboot_server": "SSH is back and Nginx HTTP 200",
 }
 
 
@@ -224,20 +235,52 @@ def verify_recovery(server, action_key):
         return checker(server, action_key)
     if current_app.config.get("AUTOMATION_EXECUTOR") != "ansible":
         return True, "Mock post-check passed."
+    if action_key == "reboot_server":
+        return _verify_reboot(server)
     spec = service_probe(server, action_key)
     if spec is None:
         return False, "No post-check is defined for this action."
     kind, target, label = spec
-    detail = f"{label} did not respond."
+    criteria = RECOVERY_CRITERIA.get(action_key, label)
+    detail = f"{criteria} did not respond."
     for attempt in range(3):
         if kind == "http":
-            ok, latency = http_probe(target, timeout=3)
+            ok, probe_detail = http_recovery(target, timeout=3)
         else:
             host, port = target
             ok, latency = tcp_probe(host, port, timeout=3)
+            probe_detail = None if latency is None else f"{latency} ms"
         if ok:
-            return True, f"{label} is up ({latency} ms)."
-        detail = f"{label} did not respond."
+            return True, f"{criteria} verified ({probe_detail})."
+        detail = f"{criteria} failed. {probe_detail or 'did not respond.'}"
         if attempt < 2:
             time.sleep(1)
+    return False, detail
+
+
+def _verify_reboot(server):
+    """A reboot is verified only after SSH and Nginx answer again."""
+    from app.services.inventory import azure_settings
+
+    settings = azure_settings()
+    host = settings.get("ip") or ""
+    url = settings.get("nginx_url") or ""
+    if not host or host == "0.0.0.0" or not url:
+        return False, "AZURE01 reboot has no address to check after startup."
+    attempts = max(1, int(current_app.config.get("REBOOT_VERIFY_ATTEMPTS", 6)))
+    pause = max(0, float(current_app.config.get("REBOOT_VERIFY_PAUSE_SECONDS", 5)))
+    detail = "AZURE01 has not finished rebooting. SSH :22 or Nginx :80 is not up yet."
+    for attempt in range(attempts):
+        ssh_ok, _latency = tcp_probe(host, 22, timeout=3)
+        http_ok, http_detail = (False, "")
+        if ssh_ok:
+            http_ok, http_detail = http_recovery(url, timeout=3)
+        if ssh_ok and http_ok:
+            return True, f"AZURE01 is back. SSH :22 is up and Nginx {http_detail}."
+        if not ssh_ok:
+            detail = "AZURE01 is rebooting. SSH :22 is not up yet."
+        else:
+            detail = "AZURE01 SSH is up. Waiting for Nginx :80 before verification can pass."
+        if attempt < attempts - 1 and pause:
+            time.sleep(pause)
     return False, detail

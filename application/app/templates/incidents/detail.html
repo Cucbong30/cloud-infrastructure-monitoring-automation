@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}INC-{{ '%03d'|format(incident.id) }} · Operations Portal{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">INC-{{ '%03d'|format(incident.id) }} – {{ incident.alert.summary if incident.alert and incident.alert.summary else incident.action_key }}</h1>
+    <p class="text-secondary mb-0">{{ incident.server.name if incident.server else '—' }} · {{ incident.server.environment if incident.server else '—' }}</p>
+  </div>
+  <span class="incident-status incident-{{ incident.status }}">{{ incident_status_label(incident.status) }}</span>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-secondary">Severity</div><strong>{{ incident.severity or '—' }}</strong></div></div></div>
+  <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-secondary">Risk</div>{% if risk %}<strong class="risk-pill risk-{{ risk }}">{{ risk|upper }}</strong>{% else %}<strong>—</strong>{% endif %}</div></div></div>
+  <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-secondary">Remediation Action</div><strong>{{ action_label }}</strong>{% if cause_label %}<div class="small text-secondary">Cause: {{ cause_label }}</div>{% endif %}</div></div></div>
+  <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-secondary">Remediation Type</div><strong>{{ 'Automatic' if incident.remediation_type == 'automatic' else ('Manual' if incident.remediation_type == 'manual' else '—') }}</strong></div></div></div>
+  <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-secondary">Assigned To</div><strong>{{ incident.acknowledger.username if incident.acknowledger else (incident.starter.username if incident.starter else '—') }}</strong></div></div></div>
+  <div class="col-md-3"><div class="card h-100"><div class="card-body"><div class="text-secondary">Related Job</div><strong>{% if latest_job %}<a href="{{ url_for('automation.detail', job_id=latest_job.id) }}">JOB-{{ '%03d'|format(latest_job.id) }}</a>{% else %}—{% endif %}</strong></div></div></div>
+</div>
+<div class="card mb-4">
+  <div class="card-body">
+    <h2 class="h5">Incident Timeline</h2>
+    <ul class="incident-timeline">
+      {% for event in events %}
+        <li>
+          <strong>{{ incident_event_title(event.event_key) }}</strong>
+          <div>{{ event.message }}</div>
+          <div class="text-secondary small">{{ event.actor_name }} · {{ event.actor_role }} · {{ event.created_at | dt }}{% if event.job_id %} · <a href="{{ url_for('automation.detail', job_id=event.job_id) }}">JOB-{{ '%03d'|format(event.job_id) }}</a>{% endif %}{% if event.approval_id %} · <a href="{{ url_for('automation.approval_detail', request_id=event.approval_id) }}">Request {{ event.approval_id }}</a>{% endif %}</div>
+        </li>
+      {% else %}
+        <li class="text-secondary">No timeline events yet.</li>
+      {% endfor %}
+    </ul>
+    <div class="d-flex gap-2 flex-wrap">
+      {% if latest_job %}
+        <a class="btn btn-outline-light" href="{{ url_for('automation.detail', job_id=latest_job.id) }}">View Job Log</a>
+      {% endif %}
+      {% if current_user.role in ['operator', 'admin'] and incident.status == 'open' %}
+        <form method="post" action="{{ url_for('incidents.acknowledge_incident', incident_id=incident.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-primary" type="submit">Acknowledge</button>
+        </form>
+      {% endif %}
+      {% if runbook %}
+        <a class="btn btn-outline-light" href="{{ url_for('automation.runbook', slug=runbook.slug) }}">View Runbook</a>
+      {% endif %}
+      {% if failure_runbook %}
+        <a class="btn btn-outline-light" href="{{ url_for('automation.runbook', slug=failure_runbook.slug) }}">View failure runbook</a>
+      {% endif %}
+      {% if show_action_form %}
+        <form class="d-flex gap-2 flex-wrap align-items-center" method="post" action="{{ url_for('incidents.remediate', incident_id=incident.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <label class="text-secondary mb-0" for="action-key">Action</label>
+          <select class="form-select form-select-sm w-auto" name="action_key" id="action-key">
+            {% for choice in choices %}
+              <option value="{{ choice.action_key }}" {% if not choice.allowed %}disabled{% endif %} {% if choice.selected %}selected{% endif %}>{{ choice.label }} · {{ choice.risk|upper }}{% if choice.risk != 'low' %} · Approval{% endif %}</option>
+            {% endfor %}
+          </select>
+          {% if selected_action.risk != 'low' %}
+            <button class="btn btn-primary" id="request-approval" type="submit">Request Approval</button>
+          {% else %}
+            <button class="btn btn-primary" id="run-remediation" type="submit">Run remediation</button>
+          {% endif %}
+        </form>
+      {% endif %}
+      {% if high_locked %}
+        <span class="text-secondary">Only an admin can request this HIGH action.</span>
+      {% endif %}
+      {% if current_user.role in ['operator', 'admin'] and incident.status == 'resolved' %}
+        <form method="post" action="{{ url_for('incidents.close_incident', incident_id=incident.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-outline-light" id="close-incident" type="submit">Close Incident</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<div class="card mb-4">
+  <div class="card-body">
+    <h2 class="h5">Related Jobs</h2>
+    {% if jobs %}
+      <ul class="mb-0">
+        {% for job in jobs %}
+          <li><a href="{{ url_for('automation.detail', job_id=job.id) }}">JOB-{{ '%03d'|format(job.id) }}</a> {{ job.action_key }} · {{ job.final_status or job.status }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-secondary mb-0">No remediation job is linked yet.</p>
+    {% endif %}
+  </div>
+</div>
+<div class="card">
+  <div class="card-body">
+    <h2 class="h5">Approval</h2>
+    {% if incident.action_key == 'investigate' %}
+      <p class="mb-2">Manual investigation. The cause does not match a runbook, so no approval request and no job are created.</p>
+    {% elif incident.blocked or incident.action_key == 'blocked' %}
+      <p class="mb-2">Blocked. The management channel is down, so no playbook was started.</p>
+    {% elif not approval_required %}
+      <p class="mb-2">Not required. This action is LOW, so it runs without an approval request.</p>
+    {% elif pending_approval %}
+      <p class="mb-2">Status <strong>{{ pending_approval.status }}</strong>. A request expires after {{ config.APPROVAL_TIMEOUT_MINUTES }} minutes. The playbook stays stopped until an admin approves.</p>
+    {% else %}
+      <p class="mb-2">Approval required before this {{ risk|upper }} action can run.</p>
+    {% endif %}
+    {% if approvals %}
+      <ul class="mb-0">
+        {% for approval in approvals %}
+          <li><a href="{{ url_for('automation.approval_detail', request_id=approval.id) }}">Request {{ approval.id }}</a> {{ approval.risk }} · {{ approval.status }}{% if approval.job_id %} · Job {{ approval.job_id }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-secondary mb-0">{% if approval_required %}No approval request is linked yet.{% else %}No approval request is linked.{% endif %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

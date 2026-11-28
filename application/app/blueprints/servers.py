@@ -8,6 +8,7 @@ from app.extensions import db
 from app.forms import ServerForm
 from app.models import Server, utcnow
 from app.presentation import job_outcome_label
+from app.services.approval import ApprovalPending
 from app.services.audit import record
 from app.services.automation import AutomationRejected, RemediationUnavailable, queue_and_dispatch
 from app.services.checks import management_block, management_status
@@ -113,6 +114,12 @@ def remediate(server_id):
             parameters=suggestion["parameters"],
             actor=current_user,
         )
+    except ApprovalPending as pending:
+        flash(
+            f"Approval request {pending.request.id} is PENDING_APPROVAL. The playbook was not started.",
+            "warning",
+        )
+        return redirect(url_for("automation.approval_detail", request_id=pending.request.id))
     except RemediationUnavailable as exc:
         flash(exc.reason, "warning")
         return redirect(url_for("servers.detail", server_id=server.id))

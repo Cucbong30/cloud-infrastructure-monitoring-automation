@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Approvals · Operations Portal{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Approval queue</h1>
+  <a class="btn btn-outline-secondary" href="{{ url_for('automation.index') }}">Jobs</a>
+</div>
+<p class="text-secondary">MEDIUM and HIGH wait here until an admin approves. A request expires after {{ config.APPROVAL_TIMEOUT_MINUTES }} minutes. A pending, rejected, or expired request has no Ansible job. Operator cannot approve.</p>
+<h2 class="h5" id="pending-requests">Pending</h2>
+<div class="table-responsive card mb-4">
+  <table class="table mb-0 align-middle">
+    <thead>
+      <tr>
+        <th>Request</th>
+        <th>Requester</th>
+        <th>Role</th>
+        <th>Target</th>
+        <th>Service</th>
+        <th>Action</th>
+        <th>Risk</th>
+        <th>Requested</th>
+        <th>Expires</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in pending %}
+        <tr class="approval-row" data-href="{{ url_for('automation.approval_detail', request_id=item.id) }}">
+          <td><a class="approval-open" href="{{ url_for('automation.approval_detail', request_id=item.id) }}">{{ item.id }}</a></td>
+          <td>{{ item.requester_name }}</td>
+          <td>{{ item.requester_role }}</td>
+          <td>{{ item.server.name if item.server else '—' }}</td>
+          <td>{{ item.service }}</td>
+          <td><code>{{ item.action_key }}</code></td>
+          <td><span class="badge text-bg-{{ badge_class(item.risk) }}">{{ item.risk }}</span></td>
+          <td>{{ item.requested_at | dt }}</td>
+          <td>{{ item.expires_at | dt }}</td>
+          <td><span class="badge text-bg-{{ badge_class(item.status) }}">{{ item.status }}</span></td>
+          <td><a class="btn btn-sm btn-primary" href="{{ url_for('automation.approval_detail', request_id=item.id) }}">Review</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="11" class="text-secondary">No requests are waiting.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<h2 class="h5" id="approval-history">History</h2>
+<div class="table-responsive card">
+  <table class="table mb-0 align-middle">
+    <thead>
+      <tr>
+        <th>Request</th>
+        <th>Requester</th>
+        <th>Role</th>
+        <th>Target</th>
+        <th>Action</th>
+        <th>Risk</th>
+        <th>Status</th>
+        <th>Approver</th>
+        <th>Decision time</th>
+        <th>Job</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in history %}
+        <tr class="approval-row" data-href="{{ url_for('automation.approval_detail', request_id=item.id) }}">
+          <td><a class="approval-open" href="{{ url_for('automation.approval_detail', request_id=item.id) }}">{{ item.id }}</a></td>
+          <td>{{ item.requester_name }}</td>
+          <td>{{ item.requester_role }}</td>
+          <td>{{ item.server.name if item.server else '—' }}</td>
+          <td><code>{{ item.action_key }}</code></td>
+          <td><span class="badge text-bg-{{ badge_class(item.risk) }}">{{ item.risk }}</span></td>
+          <td><span class="badge text-bg-{{ badge_class(item.status) }}">{{ item.status }}</span></td>
+          <td>{% if item.approver_name %}{{ item.approver_name }} · {{ item.approver_role }}{% else %}—{% endif %}</td>
+          <td>{% if item.decision_at %}{{ item.decision_at | dt }}{% else %}—{% endif %}</td>
+          <td>{% if item.job_id %}<a href="{{ url_for('automation.detail', job_id=item.job_id) }}">{{ item.job_id }}</a>{% else %}—{% endif %}</td>
+          <td><a class="btn btn-sm btn-outline-light" href="{{ url_for('automation.approval_detail', request_id=item.id) }}">View</a></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="11" class="text-secondary">No decided requests.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>
+  document.querySelectorAll(".approval-row").forEach(function (row) {
+    row.addEventListener("click", function (event) {
+      if (event.target.closest("a, button, input, form")) return;
+      window.location.href = row.dataset.href;
+    });
+  });
+</script>
+{% endblock %}
