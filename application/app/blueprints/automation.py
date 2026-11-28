@@ -188,6 +188,11 @@ def runbook(slug):
     page = runbook_page(slug)
     if page is None:
         abort(404)
+    from app.services.runbooks import ACTION_RUNBOOKS
+
+    action_key = next((key for key, item in ACTION_RUNBOOKS.items() if item == slug), None)
+    if action_key is not None:
+        page = {**page, "risk": action_risk(action_key).upper()}
     return render_template("automation/runbook.html", runbook=page)
 
 

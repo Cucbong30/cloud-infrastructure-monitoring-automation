@@ -14,6 +14,7 @@ def tcp_probe(host, port, timeout=2):
 
 
 def http_probe(url, timeout=2):
+    """Availability probe. Any response below HTTP 500 counts as reachable."""
     started = time.monotonic()
     try:
         response = requests.get(url, timeout=timeout, allow_redirects=True)
@@ -22,6 +23,19 @@ def http_probe(url, timeout=2):
     if response.status_code >= 500:
         return False, _elapsed_ms(started)
     return True, _elapsed_ms(started)
+
+
+def http_recovery(url, timeout=3):
+    """Recovery verification. Only HTTP 200 means the service recovered."""
+    started = time.monotonic()
+    try:
+        response = requests.get(url, timeout=timeout, allow_redirects=True)
+    except requests.RequestException:
+        return False, "did not respond"
+    latency = _elapsed_ms(started)
+    if response.status_code == 200:
+        return True, f"HTTP 200 ({latency} ms)"
+    return False, f"HTTP {response.status_code} is not recovery. Expected HTTP 200."
 
 
 def unpack_probe(result):

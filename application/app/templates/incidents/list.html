@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Incidents · Operations Portal{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Incidents</h1>
+</div>
+<form class="row g-2 mb-3" method="get">
+  <div class="col-auto">
+    <select class="form-select" name="status" aria-label="Status">
+      <option value="">All statuses</option>
+      {% for value in ['open', 'acknowledged', 'in_progress', 'resolved', 'closed'] %}
+        <option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ incident_status_label(value) }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select class="form-select" name="target" aria-label="Target">
+      <option value="">All targets</option>
+      {% for server in servers %}
+        <option value="{{ server.id }}" {% if target == server.id|string %}selected{% endif %}>{{ server.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select class="form-select" name="severity" aria-label="Severity">
+      <option value="">All severities</option>
+      {% for value in ['critical', 'warning', 'info'] %}
+        <option value="{{ value }}" {% if severity == value %}selected{% endif %}>{{ value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto"><button class="btn btn-outline-secondary" type="submit">Filter</button></div>
+</form>
+<div class="table-responsive card">
+  <table class="table mb-0 align-middle">
+    <thead>
+      <tr>
+        <th>Incident</th>
+        <th>Target</th>
+        <th>Severity</th>
+        <th>Status</th>
+        <th>Remediation</th>
+        <th>Opened</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for incident in incidents %}
+        <tr>
+          <td><a href="{{ url_for('incidents.detail', incident_id=incident.id) }}">INC-{{ '%03d'|format(incident.id) }}</a></td>
+          <td>{{ incident.server.name if incident.server else '—' }}</td>
+          <td>{{ incident.severity or '—' }}</td>
+          <td><span class="incident-status incident-{{ incident.status }}">{{ incident_status_label(incident.status) }}</span></td>
+          <td>{{ incident.remediation_type or '—' }}</td>
+          <td>{{ incident.opened_at | dt }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="6" class="text-secondary">No incidents for this filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

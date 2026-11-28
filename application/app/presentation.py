@@ -230,6 +230,41 @@ def _trigger_token(value):
     return labels.get(text, text.upper())
 
 
+INCIDENT_STATUS_LABELS = {
+    "open": "OPEN",
+    "acknowledged": "ACKNOWLEDGED",
+    "in_progress": "IN_PROGRESS",
+    "resolved": "RESOLVED",
+    "closed": "CLOSED",
+}
+
+INCIDENT_EVENT_TITLES = {
+    "detected": "Incident Detected",
+    "acknowledged": "Acknowledged",
+    "remediation_started": "Remediation Started",
+    "retry": "Remediation Retry",
+    "execution_failed": "Execution Failed",
+    "verification_failed": "Verification Failed",
+    "blocked": "Remediation Blocked",
+    "manual_investigation": "Manual Investigation",
+    "recovery_verified": "Recovery Verified",
+    "resolved": "Incident Resolved",
+    "closed": "Incident Closed",
+    "approval_requested": "Approval Requested",
+    "approval_approved": "Approval Approved",
+    "approval_rejected": "Approval Rejected",
+    "approval_expired": "Approval Expired",
+}
+
+
+def incident_status_label(status):
+    return INCIDENT_STATUS_LABELS.get(status, (status or "—").upper())
+
+
+def incident_event_title(event_key):
+    return INCIDENT_EVENT_TITLES.get(event_key, event_key or "Update")
+
+
 def audit_facts(entry):
     """Target, action, trigger, result, and reason stored on an audit row."""
     raw = getattr(entry, "details_json", None) or ""

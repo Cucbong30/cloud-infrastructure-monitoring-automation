@@ -293,6 +293,21 @@ pre.output { white-space: pre-wrap; max-height: 8rem; margin-bottom: 0; }
   gap: 0.5rem;
   margin-bottom: 0.75rem;
 }
+.incident-status {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.incident-open { background: #1e3a8a; color: #dbeafe; }
+.incident-acknowledged { background: #92400e; color: #ffedd5; }
+.incident-in_progress { background: #1d4ed8; color: #dbeafe; }
+.incident-resolved { background: #166534; color: #ecfdf5; }
+.incident-closed { background: #334155; color: #e2e8f0; }
+.incident-timeline { margin: 0 0 1rem; padding-left: 0; list-style: none; }
+.incident-timeline li { margin-bottom: 0.8rem; }
 .metric-row span { display: block; color: var(--muted); font-size: 0.72rem; text-transform: uppercase; }
 .metric-row strong { font-size: 1.05rem; }
 

@@ -72,6 +72,7 @@ def expire_pending():
         approval.verification_result = "NOT_RUN"
         db.session.commit()
         record("approval.expired", "approval_request", approval.id, _facts(approval, "APPROVAL_EXPIRED"), system=True)
+        _timeline(approval, "approval_expired", "Approval expired. The playbook was not started.")
     return rows
 
 
@@ -87,6 +88,8 @@ def open_request(server, action_key, parameters, actor, alert_id=None):
         .order_by(ApprovalRequest.id.desc())
     )
     if current is not None:
+        if current.incident_id is None:
+            _link_incident(current, server, alert_id)
         return current
     name, role = _identity(actor)
     now = utcnow()
@@ -111,6 +114,7 @@ def open_request(server, action_key, parameters, actor, alert_id=None):
     )
     db.session.add(approval)
     db.session.commit()
+    _link_incident(approval, server, alert_id)
     record(
         "approval.requested",
         "approval_request",
@@ -118,7 +122,50 @@ def open_request(server, action_key, parameters, actor, alert_id=None):
         _facts(approval, "Approval requested. The playbook was not started."),
         user_id=getattr(actor, "id", None),
     )
+    _timeline(
+        approval,
+        "approval_requested",
+        f"{approval.risk} approval requested for {approval.action_key}. The playbook was not started.",
+        actor=actor,
+    )
     return approval
+
+
+def _timeline(approval, event_key, message, actor=None):
+    if getattr(approval, "incident_id", None) is None:
+        return
+    from app.models import Incident
+    from app.services.incidents import note_approval
+
+    incident = db.session.get(Incident, approval.incident_id)
+    note_approval(
+        incident,
+        event_key,
+        message,
+        actor=actor,
+        approval_id=approval.id,
+        job_id=approval.job_id,
+    )
+    db.session.commit()
+
+
+def _link_incident(approval, server, alert_id):
+    """One active incident per target and action. The request does not start a job."""
+    from app.models import Alert
+    from app.services.remediation import _create_incident, _current_incident, _open_manual_incident
+
+    incident = _current_incident(server.id, approval.action_key)
+    created = incident is None
+    if created:
+        alert = db.session.get(Alert, alert_id) if alert_id else None
+        if alert is not None:
+            incident = _create_incident(server, alert, approval.action_key)
+        else:
+            incident = _open_manual_incident(server, approval.action_key, alert_id)
+    if created and (approval.mode or "MANUAL").upper() != "AUTO":
+        incident.remediation_type = "manual"
+    approval.incident_id = incident.id
+    db.session.commit()
 
 
 def decide(request_id, actor, decision, reason=""):
@@ -157,6 +204,7 @@ def decide(request_id, actor, decision, reason=""):
             _facts(approval, approval.decision_reason),
             user_id=getattr(actor, "id", None),
         )
+        _timeline(approval, "approval_rejected", approval.decision_reason or "Rejected.", actor=actor)
         return approval
     approval.status = APPROVED
     approval.decision = APPROVED
@@ -169,8 +217,11 @@ def decide(request_id, actor, decision, reason=""):
         _facts(approval, "Approved. Remediation can start."),
         user_id=getattr(actor, "id", None),
     )
+    _timeline(approval, "approval_approved", "Approved. Remediation can start.", actor=actor)
     from app.services.remediation import trigger_manual_remediation
 
+    if approval.job_id:
+        return approval
     parameters = json.loads(approval.parameters_json or "{}")
     job = trigger_manual_remediation(
         approval.server,

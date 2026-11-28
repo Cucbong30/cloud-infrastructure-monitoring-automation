@@ -29,9 +29,9 @@ def test_remediation_creates_one_job_and_audit(seeded):
     seeded.config["AUTO_REMEDIATION_ENABLED"] = True
     with seeded.app_context():
         before_jobs = db.session.scalar(select(func.count()).select_from(AutomationJob))
-        first = sync_alerts(FakePrometheus([_alert("service_down", "fp-remediate")]))
+        first = sync_alerts(FakePrometheus([_alert("NginxDown", "fp-remediate")]))
         assert first.remediated == 1
-        second = sync_alerts(FakePrometheus([_alert("service_down", "fp-remediate")]))
+        second = sync_alerts(FakePrometheus([_alert("NginxDown", "fp-remediate")]))
         assert second.remediated == 0
         alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-remediate"))
         jobs = db.session.scalars(select(AutomationJob).where(AutomationJob.alert_id == alert.id)).all()
@@ -54,7 +54,7 @@ def test_failed_remediation_can_retry(seeded):
     seeded.config["AUTO_REMEDIATION_ENABLED"] = True
     seeded.config["AUTO_REMEDIATION_COOLDOWN_SECONDS"] = 0
     with seeded.app_context():
-        sync_alerts(FakePrometheus([_alert("service_down", "fp-retry")]))
+        sync_alerts(FakePrometheus([_alert("NginxDown", "fp-retry")]))
         alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-retry"))
         job = db.session.scalar(select(AutomationJob).where(AutomationJob.alert_id == alert.id))
         assert job.action_key == "restart_nginx"

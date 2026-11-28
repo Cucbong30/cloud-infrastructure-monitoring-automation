@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from app.extensions import db
-from app.models import Alert, AuditLog, AutomationJob, Incident, Server
+from app.models import Alert, ApprovalRequest, AuditLog, AutomationJob, Incident, Server
 from app.services.alert_sync import sync_alerts
 from app.services.automation import enqueue_job
 from app.services.prometheus import PrometheusAlert
@@ -38,7 +38,7 @@ def test_auto_maps_each_allow_listed_host(seeded):
     _enable(seeded)
     cases = [
         ("NginxDown", "fp-web", "192.168.10.11:9100", "restart_nginx"),
-        ("service_down", "fp-app", "192.168.10.12:9100", "restart_container"),
+        ("container_down", "fp-app", "192.168.10.12:9100", "restart_container"),
         ("WindowsExporterDown", "fp-win", "192.168.10.13:9182", "restart_windows_exporter"),
     ]
     with seeded.app_context():
@@ -212,7 +212,10 @@ def test_unknown_action_does_not_auto_run(seeded):
                 AuditLog.resource_id == str(alert.id),
             )
         )
-        assert "no allow-listed" in manual.details_json
+        assert "manual investigation" in manual.details_json
+        incident = db.session.scalar(select(Incident).where(Incident.alert_id == alert.id))
+        assert incident.action_key == "investigate"
+        assert incident.status == "open"
 
 
 def test_maintenance_still_stores_the_alert_and_skips_auto(seeded):
@@ -372,7 +375,13 @@ def test_new_incident_starts_at_zero_after_manual_required(seeded, monkeypatch):
     with seeded.app_context():
         sync_alerts(FakePrometheus([_alert("NginxDown", "fp-reset", "192.168.10.11:9100")]))
         alert = db.session.scalar(select(Alert).where(Alert.fingerprint == "fp-reset"))
-        first = db.session.scalar(select(Incident).where(Incident.alert_id == alert.id, Incident.status == "open"))
+        first = db.session.scalar(
+            select(Incident).where(
+                Incident.alert_id == alert.id,
+                Incident.status.in_(("open", "in_progress")),
+            )
+        )
+        assert first.status == "open"
         assert first.retry_count == 1
         assert first.reason == "retry_limit"
         assert first.manual_required is True
@@ -449,7 +458,7 @@ def test_operator_click_stays_manual(seeded, client):
 
 _TARGETS = (
     ("NginxDown", "192.168.10.11:9100", "restart_nginx", "WEB01"),
-    ("service_down", "192.168.10.12:9100", "restart_container", "APP01"),
+    ("container_down", "192.168.10.12:9100", "restart_container", "APP01"),
     ("WindowsExporterDown", "192.168.10.13:9182", "restart_windows_exporter", "WIN01"),
     ("NginxDown", "AZURE01:9100", "restart_nginx", "AZURE01"),
 )
@@ -563,6 +572,7 @@ def test_each_target_blocks_before_the_playbook(seeded):
             assert '"result": "MANUAL_REQUIRED"' in manual.details_json
             assert f'"target": "{host}"' in manual.details_json
             incident = db.session.scalar(select(Incident).where(Incident.alert_id == alert.id))
+            assert incident.action_key == _action
             assert incident.blocked is True
             assert incident.manual_required is True
             assert incident.retry_count == 0
@@ -577,6 +587,36 @@ def test_each_target_blocks_before_the_playbook(seeded):
             assert '"playbook_executed": false' in blocked.details_json
             assert "auto_remediation.started" not in actions
         assert db.session.scalar(select(func.count()).select_from(AutomationJob)) == before
+
+
+def test_high_reboot_opens_an_incident_and_does_not_run(seeded):
+    from app.models import utcnow
+
+    _enable(seeded)
+    now = utcnow()
+    with seeded.app_context():
+        server = db.session.scalar(select(Server).where(Server.name == "AZURE01"))
+        alert = Alert(
+            server_id=server.id,
+            fingerprint="fp-reboot-high",
+            alert_name="reboot_required",
+            severity="critical",
+            status="firing",
+            summary="reboot_required",
+            starts_at=now,
+            created_at=now,
+        )
+        db.session.add(alert)
+        db.session.commit()
+        assert maybe_remediate(alert) is None
+        incident = db.session.scalar(select(Incident).where(Incident.alert_id == alert.id))
+        assert incident.action_key == "reboot_server"
+        assert incident.status == "open"
+        assert (
+            db.session.scalar(select(func.count()).select_from(AutomationJob).where(AutomationJob.alert_id == alert.id))
+            == 0
+        )
+        assert db.session.scalar(select(ApprovalRequest).where(ApprovalRequest.alert_id == alert.id)) is None
 
 
 def test_each_target_verification_failure_does_not_retry(seeded):
@@ -737,17 +777,48 @@ def test_each_probed_outage_uses_its_own_action(seeded):
     seeded.config["AUTO_REMEDIATION_COOLDOWN_SECONDS"] = 0
     hosts = [
         {"name": "WEB01", "exporter": "UP", "services": [{"name": "Nginx :80", "status": "UP"}]},
-        {"name": "APP01", "exporter": "UP", "services": [{"name": "App :8080", "status": "DOWN"}]},
+        {
+            "name": "APP01",
+            "exporter": "UP",
+            "services": [
+                {"name": "Docker", "status": "UP"},
+                {"name": "App :8080", "status": "DOWN"},
+            ],
+        },
         {"name": "WIN01", "exporter": "DOWN", "services": [{"name": "WinRM :5985", "status": "UP"}]},
     ]
     with seeded.app_context():
         alerts = consider_live_hosts(hosts)
-        assert {alert.alert_name for alert in alerts} == {"container_down", "WindowsExporterDown"}
+        assert {alert.alert_name for alert in alerts} == {"container_down", "exporter_down"}
         started = {maybe_remediate(alert).action_key for alert in alerts}
         assert started == {"restart_container", "restart_windows_exporter"}
         assert db.session.scalar(
             select(func.count()).select_from(AutomationJob).where(AutomationJob.action_key == "restart_nginx")
         ) == 0
+        docker_down = consider_live_hosts(
+            [
+                {
+                    "name": "APP01",
+                    "exporter": "UP",
+                    "services": [
+                        {"name": "Docker", "status": "DOWN"},
+                        {"name": "App :8080", "status": "DOWN"},
+                    ],
+                }
+            ]
+        )
+        assert [alert.alert_name for alert in docker_down] == ["docker_service_down"]
+        assert maybe_remediate(docker_down[0]) is None
+        approval = db.session.scalar(select(ApprovalRequest).where(ApprovalRequest.alert_id == docker_down[0].id))
+        assert approval.action_key == "restart_docker_service"
+        assert approval.risk == "MEDIUM"
+        assert approval.job_id is None
+        assert (
+            db.session.scalar(
+                select(func.count()).select_from(AutomationJob).where(AutomationJob.action_key == "restart_docker_service")
+            )
+            == 0
+        )
 
 
 def test_host_drawer_does_not_mix_another_servers_retry_limit(seeded, client):
@@ -796,17 +867,21 @@ def test_azure_nginx_down_runs_when_web01_nginx_is_up(seeded, monkeypatch):
     seen = {}
 
     def web_is_up(url, timeout=2):
-        return "192.168.10.11" in url, 4
+        if "192.168.10.11" in url:
+            return True, "HTTP 200 (4 ms)"
+        return False, "did not respond"
 
     def azure_recovers(url, timeout=3):
-        return "20.243.24.91" in url, 12
+        if "20.243.24.91" in url:
+            return True, "HTTP 200 (12 ms)"
+        return False, "HTTP 404 is not recovery. Expected HTTP 200."
 
     def fake_run(**kwargs):
         seen.update(kwargs)
         return ExecutionResult(True, 0, "ok", utcnow(), utcnow())
 
-    monkeypatch.setattr("app.services.probes.http_probe", web_is_up)
-    monkeypatch.setattr("app.services.checks.http_probe", azure_recovers)
+    monkeypatch.setattr("app.services.probes.http_recovery", web_is_up)
+    monkeypatch.setattr("app.services.checks.http_recovery", azure_recovers)
     monkeypatch.setattr("app.executors.ansible.run_controller_playbook", fake_run)
     with seeded.app_context():
         server = db.session.scalar(select(Server).where(Server.name == "AZURE01"))

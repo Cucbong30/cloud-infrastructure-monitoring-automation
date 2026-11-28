@@ -13,6 +13,8 @@ from app.presentation import (
     audit_message,
     badge_class,
     format_clock,
+    incident_event_title,
+    incident_status_label,
     execution_result_label,
     job_duration_seconds,
     job_mode,
@@ -127,6 +129,8 @@ def create_app(test_config=None):
             "verification_stage": verification_stage,
             "retry_decision": retry_decision,
             "job_mode": job_mode,
+            "incident_status_label": incident_status_label,
+            "incident_event_title": incident_event_title,
             "auto_remediation_enabled": app.config.get("AUTO_REMEDIATION_ENABLED", False),
             "automation_executor": app.config.get("AUTOMATION_EXECUTOR", "mock"),
         }

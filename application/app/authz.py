@@ -17,6 +17,9 @@ def roles_required(*roles):
                     "automation.approve_request",
                     "automation.reject_request",
                     "alerts.remediate",
+                    "incidents.acknowledge",
+                    "incidents.close",
+                    "incidents.remediate",
                 }:
                     try:
                         from app.services.audit import record
